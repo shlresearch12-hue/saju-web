@@ -550,8 +550,17 @@ const App = (() => {
         const index = {};
         for (const [char, info] of Object.entries(dict)) {
             const eum = info[1]; // 음(읽기)
+            const entry = { char, hun: info[0], eum: info[1], strokes: info[2], element: info[3], meaning: info[4] };
             if (!index[eum]) index[eum] = [];
-            index[eum].push({ char, hun: info[0], eum: info[1], strokes: info[2], element: info[3], meaning: info[4] });
+            index[eum].push(entry);
+            // 별칭(현대 발음) 등록 - 예: 金 금→김
+            const aliases = info[5];
+            if (aliases) {
+                aliases.forEach(alias => {
+                    if (!index[alias]) index[alias] = [];
+                    index[alias].push(entry);
+                });
+            }
         }
         return index;
     }
