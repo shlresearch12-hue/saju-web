@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사주풀이 - 四柱八字</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <h1>사주풀이</h1>
+        <p>四柱八字 - 사주팔자로 보는 나의 운명</p>
+        <p class="subtitle">생년월일과 태어난 시각으로 사주를 분석합니다</p>
+    </header>
+
+    <div class="container">
+        <!-- Action Buttons -->
+        <div class="action-bar">
+            <button class="btn btn-primary" id="addPersonBtn">+ 사람 추가</button>
+            <button class="btn btn-secondary" id="compareBtn" style="display:none">궁합 보기</button>
+            <button class="btn btn-outline" id="familyBtn" style="display:none">가족 기운 분석</button>
+        </div>
+
+        <!-- Member Cards -->
+        <div class="member-cards" id="memberCards"></div>
+
+        <!-- Person Input Form -->
+        <div class="form-section hidden" id="formSection">
+            <h3>정보 입력</h3>
+            <form id="personForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="personName">이름</label>
+                        <input type="text" id="personName" placeholder="이름을 입력하세요" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="gender">성별</label>
+                        <select id="gender" required>
+                            <option value="">선택하세요</option>
+                            <option value="male">남성</option>
+                            <option value="female">여성</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="birthDate">생년월일 (양력)</label>
+                        <input type="date" id="birthDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="birthTime">태어난 시각</label>
+                        <input type="time" id="birthTime">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="unknownTime">
+                            <label for="unknownTime">시간 모름</label>
+                        </div>
+                    </div>
+                    <div class="form-group full">
+                        <label for="birthPlace">태어난 장소 (선택)</label>
+                        <input type="text" id="birthPlace" placeholder="예: 서울, 부산, 대구 등">
+                    </div>
+                    <div class="form-group full name-hanja-section">
+                        <label>한자 이름 (선택 - 성명학 분석용)</label>
+                        <div class="hanja-input-grid">
+                            <div class="hanja-input-item">
+                                <label for="hanjaSurname">성(姓)</label>
+                                <input type="text" id="hanjaSurname" maxlength="2" placeholder="예: 金">
+                                <div class="hanja-info" id="hanjaSurnameInfo"></div>
+                            </div>
+                            <div class="hanja-input-item">
+                                <label for="hanjaGiven1">이름 첫째자</label>
+                                <input type="text" id="hanjaGiven1" maxlength="1" placeholder="예: 有">
+                                <div class="hanja-info" id="hanjaGiven1Info"></div>
+                            </div>
+                            <div class="hanja-input-item">
+                                <label for="hanjaGiven2">이름 둘째자</label>
+                                <input type="text" id="hanjaGiven2" maxlength="1" placeholder="예: 煥">
+                                <div class="hanja-info" id="hanjaGiven2Info"></div>
+                            </div>
+                        </div>
+                        <small class="stroke-help">한자를 입력하면 뜻풀이 + 오행 + 획수가 자동 분석됩니다. (예: 金有煥 → 쇠 금, 있을 유, 빛날 환)</small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">사주 보기</button>
+                        <button type="button" class="btn btn-outline" id="cancelBtn">취소</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Reading Result -->
+        <div id="readingResult"></div>
+
+        <!-- Compare / Family Result -->
+        <div id="compareResult"></div>
+    </div>
+
+    <!-- Compare Modal -->
+    <div class="modal-overlay hidden" id="compareModal">
+        <div class="modal">
+            <h3>궁합 비교할 두 사람을 선택하세요</h3>
+            <select id="comparePerson1"></select>
+            <select id="comparePerson2"></select>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="doCompare">궁합 보기</button>
+                <button class="btn btn-outline" id="closeCompareModal">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>본 사주풀이는 참고용이며, 전문 역학인의 상담을 대체하지 않습니다.</p>
+        <p>사주풀이 &copy; 2024</p>
+    </footer>
+
+    <script src="js/saju-engine.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

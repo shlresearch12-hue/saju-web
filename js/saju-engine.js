@@ -1,0 +1,1017 @@
+// ============================================================
+// 사주풀이 엔진 v2 - 지장간, 신살, 세운, 성명학 추가
+// ============================================================
+
+const SajuEngine = (() => {
+    const STEMS = ['갑','을','병','정','무','기','경','신','임','계'];
+    const STEMS_HANJA = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
+    const BRANCHES = ['자','축','인','묘','진','사','오','미','신','유','술','해'];
+    const BRANCHES_HANJA = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+    const BRANCHES_ANIMAL = ['쥐','소','호랑이','토끼','용','뱀','말','양','원숭이','닭','개','돼지'];
+    const STEM_ELEMENTS = ['목','목','화','화','토','토','금','금','수','수'];
+    const BRANCH_ELEMENTS = ['수','토','목','목','토','화','화','토','금','금','토','수'];
+    const ELEMENT_COLORS = {'목':'#2d8a4e','화':'#e63946','토':'#c8a951','금':'#8a8a8a','수':'#457b9d'};
+    const ELEMENT_NAMES = {'목':'나무','화':'불','토':'흙','금':'쇠','수':'물'};
+    const STEM_YINYANG = ['양','음','양','음','양','음','양','음','양','음'];
+    const BRANCH_YINYANG = ['양','음','양','음','양','음','양','음','양','음','양','음'];
+    const SOLAR_TERMS = [[1,6,12,'소한'],[2,4,1,'입춘'],[3,6,2,'경칩'],[4,5,3,'청명'],[5,6,4,'입하'],[6,6,5,'망종'],[7,7,6,'소서'],[8,7,7,'입추'],[9,8,8,'백로'],[10,8,9,'한로'],[11,7,10,'입동'],[12,7,11,'대설']];
+    const HOUR_NAMES = ['자시(23~01)','축시(01~03)','인시(03~05)','묘시(05~07)','진시(07~09)','사시(09~11)','오시(11~13)','미시(13~15)','신시(15~17)','유시(17~19)','술시(19~21)','해시(21~23)'];
+
+    // ============================================================
+    // 지장간 (地藏干) - 지지 속에 숨은 천간
+    // [본기, 중기, 여기] (없으면 null)
+    // ============================================================
+    const JIJANGGAN = {
+        0:  [9, null, null],    // 자: 계
+        1:  [5, 9, 7],          // 축: 기, 계, 신
+        2:  [0, 2, 4],          // 인: 갑, 병, 무
+        3:  [1, null, null],    // 묘: 을
+        4:  [4, 1, 9],          // 진: 무, 을, 계
+        5:  [2, 4, 6],          // 사: 병, 무, 경
+        6:  [3, 5, null],       // 오: 정, 기
+        7:  [5, 3, 1],          // 미: 기, 정, 을
+        8:  [6, 8, 4],          // 신: 경, 임, 무
+        9:  [7, null, null],    // 유: 신
+        10: [4, 7, 3],          // 술: 무, 신, 정
+        11: [8, 0, null]        // 해: 임, 갑
+    };
+
+    function getJijanggan(branchIdx) {
+        const jj = JIJANGGAN[branchIdx];
+        return jj.filter(v => v !== null).map(stemIdx => ({
+            stem: stemIdx,
+            name: STEMS[stemIdx],
+            hanja: STEMS_HANJA[stemIdx],
+            element: STEM_ELEMENTS[stemIdx],
+            yinyang: STEM_YINYANG[stemIdx]
+        }));
+    }
+
+    function analyzeJijanggan(pillars) {
+        const result = {};
+        ['year','month','day','hour'].forEach(pos => {
+            result[pos] = getJijanggan(pillars[pos].branch);
+        });
+        // 지장간 포함 오행 분석 (가중치 적용)
+        const extendedElements = {'목':0,'화':0,'토':0,'금':0,'수':0};
+        ['year','month','day','hour'].forEach(pos => {
+            extendedElements[STEM_ELEMENTS[pillars[pos].stem]] += 1.0;
+            const jj = result[pos];
+            jj.forEach((j, idx) => {
+                const weight = idx === 0 ? 0.6 : idx === 1 ? 0.3 : 0.1; // 본기 > 중기 > 여기
+                extendedElements[j.element] += weight;
+            });
+        });
+        return { positions: result, extendedElements };
+    }
+
+    // ============================================================
+    // 신살 (神殺)
+    // ============================================================
+    function calculateShinsal(pillars) {
+        const allBranches = [pillars.year.branch, pillars.month.branch, pillars.day.branch, pillars.hour.branch];
+        const yearBr = pillars.year.branch;
+        const dayBr = pillars.day.branch;
+        const dayStem = pillars.day.stem;
+        const results = [];
+
+        // 삼합 그룹 판별
+        const groups = [[2,6,10],[5,9,1],[8,0,4],[11,3,7]]; // 인오술, 사유축, 신자진, 해묘미
+        function getGroup(br) { return groups.findIndex(g => g.includes(br)); }
+
+        // 도화살 (桃花殺) - 이성 매력, 예술성
+        const doHwaTargets = [3, 6, 9, 0]; // 인오술→묘, 사유축→오, 신자진→유, 해묘미→자
+        const yearGroup = getGroup(yearBr);
+        const dayGroup = getGroup(dayBr);
+        if (yearGroup >= 0) {
+            const target = doHwaTargets[yearGroup];
+            if (allBranches.includes(target)) {
+                results.push({
+                    name: '도화살', hanja: '桃花殺', type: 'neutral',
+                    desc: '이성에게 매력이 넘치고 예술적 감각이 뛰어납니다. 연예, 예술, 서비스업에서 빛을 발합니다.',
+                    detail: '외모나 분위기에 매력이 있어 이성 관계가 풍부합니다. 긍정적으로 활용하면 대인관계와 사교에 큰 도움이 되지만, 과도하면 이성 문제에 주의해야 합니다.'
+                });
+            }
+        }
+
+        // 역마살 (驛馬殺) - 이동, 변화, 해외
+        const yukMaTargets = [8, 11, 2, 5]; // 인오술→신, 사유축→해, 신자진→인, 해묘미→사
+        if (yearGroup >= 0) {
+            const target = yukMaTargets[yearGroup];
+            if (allBranches.includes(target)) {
+                results.push({
+                    name: '역마살', hanja: '驛馬殺', type: 'neutral',
+                    desc: '활동적이고 이동이 잦으며 해외와 인연이 깊습니다. 무역, 유통, 여행, 외교 분야에 적합합니다.',
+                    detail: '한 곳에 머무르기보다 끊임없이 움직이는 성향입니다. 이사, 여행, 출장이 잦으며 해외 거주 가능성이 높습니다. 긍정적으로는 넓은 세상을 경험하지만, 과하면 안정을 잃을 수 있습니다.'
+                });
+            }
+        }
+
+        // 화개살 (華蓋殺) - 학문, 종교, 고독
+        const hwaGaeTargets = [10, 1, 4, 7]; // 인오술→술, 사유축→축, 신자진→진, 해묘미→미
+        if (yearGroup >= 0) {
+            const target = hwaGaeTargets[yearGroup];
+            if (allBranches.includes(target)) {
+                results.push({
+                    name: '화개살', hanja: '華蓋殺', type: 'positive',
+                    desc: '학문, 예술, 종교에 깊은 재능이 있습니다. 영적 감수성이 뛰어나고 철학적 사고를 합니다.',
+                    detail: '독특한 세계관을 가지고 있으며 정신적 세계에 관심이 많습니다. 종교인, 예술가, 학자에게 많이 나타나며, 고독을 즐기는 면이 있습니다.'
+                });
+            }
+        }
+
+        // 양인살 (羊刃殺) - 강한 기운, 결단력
+        const yangInTargets = [3, 2, 6, 5, 6, 5, 9, 8, 0, 11]; // 갑→묘, 을→인, 병→오...
+        const yangInTarget = yangInTargets[dayStem];
+        if (allBranches.includes(yangInTarget)) {
+            results.push({
+                name: '양인살', hanja: '羊刃殺', type: 'caution',
+                desc: '기운이 매우 강하고 결단력이 뛰어납니다. 군인, 경찰, 외과의사 등에 적합합니다.',
+                detail: '강한 추진력과 결단력이 있으나 성격이 급하고 다툼이 생길 수 있습니다. 이 기운을 잘 활용하면 큰 성취를 이루지만, 제어하지 못하면 갈등과 사고에 주의해야 합니다.'
+            });
+        }
+
+        // 겁살 (劫殺) - 위기 극복
+        const geopSalTargets = [5, 2, 11, 8]; // 인오술→사, 사유축→인, 신자진→해, 해묘미→신
+        if (yearGroup >= 0) {
+            const target = geopSalTargets[yearGroup];
+            if (allBranches.includes(target)) {
+                results.push({
+                    name: '겁살', hanja: '劫殺', type: 'caution',
+                    desc: '위기 상황에서 강한 돌파력을 발휘합니다. 도전정신이 강하지만 무모해질 수 있습니다.',
+                    detail: '모험적이고 위기에 강하지만 재물 손실이나 사기에 주의가 필요합니다. 이 기운이 있는 사람은 안전한 투자를 선호하고 보험에 가입하는 것이 좋습니다.'
+                });
+            }
+        }
+
+        // 문창귀인 (文昌貴人) - 학업, 문서
+        const munChangTargets = [5, 6, 8, 9, 8, 9, 11, 0, 2, 3]; // 갑→사, 을→오...
+        const mcTarget = munChangTargets[dayStem];
+        if (allBranches.includes(mcTarget)) {
+            results.push({
+                name: '문창귀인', hanja: '文昌貴人', type: 'positive',
+                desc: '학업과 시험에 강한 길신입니다. 학문, 글쓰기, 자격증 취득에 유리합니다.',
+                detail: '머리가 좋고 학습 능력이 뛰어납니다. 문서 관련 일에서 행운이 따르며, 공부나 연구 활동이 좋은 결과를 냅니다.'
+            });
+        }
+
+        // 천을귀인 (天乙貴人) - 최고의 길신
+        const chunElMap = {
+            0: [1,7], 1: [0,8], 2: [9,11], 3: [9,11], 4: [1,7],
+            5: [0,8], 6: [7,1], 7: [6,2], 8: [3,5], 9: [3,5]
+        };
+        const ceTargets = chunElMap[dayStem];
+        if (ceTargets && ceTargets.some(t => allBranches.includes(t))) {
+            results.push({
+                name: '천을귀인', hanja: '天乙貴人', type: 'positive',
+                desc: '가장 좋은 귀인입니다! 어려울 때 반드시 도움이 옵니다. 인생 전반에 귀인의 도움이 있습니다.',
+                detail: '위기 상황에서 기적적으로 도움을 받으며, 사회적으로 존경받는 위치에 오를 수 있습니다. 주변에 좋은 사람이 모이고, 큰 어려움도 무사히 넘기는 복이 있습니다.'
+            });
+        }
+
+        // 천덕귀인 / 월덕귀인 (간략)
+        const monthBr = pillars.month.branch;
+        const chunDukMap = { 2:3, 3:8, 4:8, 5:7, 6:0, 7:9, 8:9, 9:2, 10:2, 11:1, 0:1, 1:6 };
+        if (allBranches.includes(chunDukMap[monthBr]) || STEMS.indexOf(STEMS[chunDukMap[monthBr]]) >= 0) {
+            // 간략 체크
+        }
+
+        // 귀문관살 (鬼門關殺)
+        const gwiMunPairs = [[2,7],[3,6],[4,5],[10,11],[1,0]]; // 인미, 묘오, 진사, 술해, 축자
+        for (let i = 0; i < allBranches.length; i++) {
+            for (let j = i + 1; j < allBranches.length; j++) {
+                for (const pair of gwiMunPairs) {
+                    if ((allBranches[i] === pair[0] && allBranches[j] === pair[1]) ||
+                        (allBranches[i] === pair[1] && allBranches[j] === pair[0])) {
+                        if (!results.some(r => r.name === '귀문관살')) {
+                            results.push({
+                                name: '귀문관살', hanja: '鬼門關殺', type: 'caution',
+                                desc: '감수성이 매우 예민하고 직감이 뛰어납니다. 심리, 종교, 예술 분야에 재능이 있습니다.',
+                                detail: '정신적으로 민감하여 스트레스에 취약할 수 있지만, 이를 잘 활용하면 뛰어난 직관력과 예술적 감각을 발휘합니다. 명상이나 운동으로 정신 건강을 관리하세요.'
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        return results;
+    }
+
+    // ============================================================
+    // 세운 (歲運) - 올해 운세
+    // ============================================================
+    function calculateSeun(pillars, yongsin, birthYear) {
+        const currentYear = new Date().getFullYear();
+        const yearStem = ((currentYear - 4) % 10 + 10) % 10;
+        const yearBranch = ((currentYear - 4) % 12 + 12) % 12;
+        const dayEl = STEM_ELEMENTS[pillars.day.stem];
+        const seunEl = STEM_ELEMENTS[yearStem];
+        const seunBrEl = BRANCH_ELEMENTS[yearBranch];
+        const age = currentYear - birthYear + 1;
+
+        const cycle = ['목','화','토','금','수'];
+        const dayIdx = cycle.indexOf(dayEl);
+        const seunIdx = cycle.indexOf(seunEl);
+        const diff = ((seunIdx - dayIdx) + 5) % 5;
+        const tenGodType = ['비겁','식상','재성','관성','인성'][diff];
+
+        // 세운과 사주의 합/충 체크
+        const allBranches = [pillars.year.branch, pillars.month.branch, pillars.day.branch, pillars.hour.branch];
+        const chung = [[0,6],[1,7],[2,8],[3,9],[4,10],[5,11]];
+        const chungNames = ['자오충','축미충','인신충','묘유충','진술충','사해충'];
+        const yukHap = [[0,1],[2,11],[3,10],[4,9],[5,8],[6,7]];
+        const yukHapNames = ['자축합','인해합','묘술합','진유합','사신합','오미합'];
+        let seunRelations = [];
+        allBranches.forEach(br => {
+            chung.forEach((pair, idx) => {
+                if ((yearBranch === pair[0] && br === pair[1]) || (yearBranch === pair[1] && br === pair[0]))
+                    seunRelations.push({ type: 'chung', detail: chungNames[idx] });
+            });
+            yukHap.forEach((pair, idx) => {
+                if ((yearBranch === pair[0] && br === pair[1]) || (yearBranch === pair[1] && br === pair[0]))
+                    seunRelations.push({ type: 'hap', detail: yukHapNames[idx] });
+            });
+        });
+
+        // 용신과의 관계
+        const isYongsinYear = seunEl === yongsin.yongsin || seunBrEl === yongsin.yongsin;
+
+        const interpretations = {
+            '비겁': {
+                overall: '올해는 자기 자신에 집중하는 해입니다. 독립심이 강해지고 새로운 시작을 할 수 있습니다.',
+                wealth: '경쟁이 치열해져 재물 지출이 늘 수 있습니다. 공동 투자는 피하고 단독 결정이 유리합니다.',
+                career: '동업이나 협업에서 갈등이 생길 수 있지만, 독립적인 활동에서는 좋은 성과를 냅니다.',
+                love: '연인과 의견 충돌이 있을 수 있으나 솔직한 대화로 해결하세요. 새로운 만남의 기회도 있습니다.',
+                health: '과로에 주의하고 충분한 휴식을 취하세요. 운동으로 스트레스를 해소하면 좋습니다.'
+            },
+            '식상': {
+                overall: '창의력과 표현력이 극대화되는 해입니다. 새로운 기술 습득이나 예술 활동에 좋습니다.',
+                wealth: '재테크보다는 자기계발에 투자하는 것이 장기적으로 유리합니다.',
+                career: '아이디어가 넘치고 기획력이 빛납니다. 프리랜서나 창작 활동에 유리합니다.',
+                love: '매력이 상승하여 이성에게 인기가 많아집니다. 기존 관계에서는 재미있는 이벤트를 만드세요.',
+                health: '소화기 건강에 주의하세요. 말을 많이 하는 일이 많아 목 건강도 챙기세요.'
+            },
+            '재성': {
+                overall: '재물운이 좋아지는 해입니다! 수입이 늘거나 재테크에서 성과를 볼 수 있습니다.',
+                wealth: '투자, 부동산, 사업 확장에 좋은 시기입니다. 단, 분수에 맞는 투자를 하세요.',
+                career: '사업 확장이나 이직에 유리합니다. 영업, 마케팅에서 좋은 실적을 거둡니다.',
+                love: '남성은 새로운 인연이 올 수 있고, 여성은 시아버지/시어머니와의 관계에 변화가 있을 수 있습니다.',
+                health: '과로와 스트레스로 건강이 약해질 수 있으니 돈보다 건강을 우선하세요.'
+            },
+            '관성': {
+                overall: '사회적 지위와 명예에 변화가 오는 해입니다. 승진, 시험 합격, 직장 이동의 가능성이 있습니다.',
+                wealth: '안정적인 소득이 유지되지만 큰 투자는 삼가세요. 법적 분쟁에 주의하세요.',
+                career: '승진이나 새로운 보직을 맡을 수 있습니다. 책임감이 커지고 바빠집니다.',
+                love: '여성은 새로운 인연이 올 수 있고, 남성은 직장 관련 스트레스가 관계에 영향을 줄 수 있습니다.',
+                health: '스트레스와 과중한 업무로 건강이 나빠질 수 있습니다. 정기 검진을 받으세요.'
+            },
+            '인성': {
+                overall: '학업, 자격증, 부동산에 좋은 해입니다. 내면의 성장과 정신적 풍요가 이루어집니다.',
+                wealth: '큰 수입보다는 안정적인 소득이 기대됩니다. 부동산 관련 좋은 소식이 있을 수 있습니다.',
+                career: '학습과 연구에 몰두하기 좋고, 자격증 취득에 유리합니다. 선배나 어른의 도움이 있습니다.',
+                love: '안정적이고 편안한 관계를 추구합니다. 어머니나 연장자와의 관계가 중요해집니다.',
+                health: '비교적 건강한 해이지만, 게으름으로 체중 증가에 주의하세요.'
+            }
+        };
+
+        let overallLuck = '보통';
+        let luckScore = 50;
+        if (isYongsinYear) { luckScore += 20; overallLuck = '좋음'; }
+        seunRelations.forEach(r => { if (r.type === 'hap') luckScore += 10; if (r.type === 'chung') luckScore -= 10; });
+        if (luckScore >= 70) overallLuck = '대길';
+        else if (luckScore >= 55) overallLuck = '길';
+        else if (luckScore >= 40) overallLuck = '보통';
+        else overallLuck = '주의';
+        luckScore = Math.max(0, Math.min(100, luckScore));
+
+        return {
+            year: currentYear,
+            stem: yearStem, branch: yearBranch,
+            seunStr: `${STEMS[yearStem]}${BRANCHES[yearBranch]}(${STEMS_HANJA[yearStem]}${BRANCHES_HANJA[yearBranch]})`,
+            animal: BRANCHES_ANIMAL[yearBranch],
+            seunElement: seunEl, seunBrElement: seunBrEl,
+            tenGodType, isYongsinYear,
+            seunRelations, interpretations: interpretations[tenGodType],
+            overallLuck, luckScore, age
+        };
+    }
+
+    // ============================================================
+    // 성명학 (姓名學) - 한자 뜻풀이 + 오행 + 획수 종합 분석
+    // ============================================================
+
+    // 한자 사전: {글자: [훈(뜻), 음(읽기), 획수, 오행, 길흉의미]}
+    const HANJA_DICT = {
+        // === 성씨 (姓氏) ===
+        '金':['쇠','금',8,'금','강인함과 결단력, 재물과 귀함을 상징'],
+        '李':['오얏','이',7,'목','풍요와 학문, 선비 정신을 상징'],
+        '朴':['순박할','박',6,'목','소박함과 순수함, 자연을 상징'],
+        '崔':['높을','최',11,'토','높은 뜻과 큰 포부를 상징'],
+        '鄭':['나라이름','정',14,'화','밝음과 정의, 나라를 빛내는 기운'],
+        '姜':['생강','강',9,'목','강인한 생명력과 활기를 상징'],
+        '趙':['나라이름','조',14,'화','활발함과 진취적 기상을 상징'],
+        '尹':['다스릴','윤',4,'토','다스림과 조화, 리더십을 상징'],
+        '張':['베풀','장',11,'화','넓은 아량과 베풂의 기운'],
+        '林':['수풀','임',8,'목','무성한 수풀처럼 풍요와 번영'],
+        '韓':['나라이름','한',17,'수','큰 나라의 기상, 웅장함'],
+        '吳':['나라이름','오',7,'토','밝고 명랑한 기운'],
+        '徐':['천천히','서',10,'금','여유와 신중함을 상징'],
+        '申':['펼','신',5,'금','뻗어나가는 기운과 확장'],
+        '洪':['넓을','홍',9,'수','넓은 물처럼 포용과 관대함'],
+        '權':['권세','권',22,'목','권위와 지도력을 상징'],
+        '黃':['누를','황',12,'토','풍요와 중심, 안정을 상징'],
+        '安':['편안할','안',6,'토','평화와 안정, 편안함'],
+        '宋':['나라이름','송',7,'목','문화와 예술의 기운'],
+        '柳':['버들','류',9,'목','유연함과 생명력'],
+        '全':['온전할','전',6,'금','완전함과 온전함'],
+        '高':['높을','고',10,'토','높은 뜻과 지위'],
+        '文':['글월','문',4,'수','학문과 문장력'],
+        '裵':['나눌','배',14,'토','풍요를 나누는 아량'],
+        '劉':['죽일','유',15,'금','강인한 결단력'],
+        '陳':['베풀','진',11,'토','넓은 베풂과 포용'],
+        '曹':['무리','조',11,'토','무리를 이끄는 리더십'],
+        '具':['갖출','구',8,'금','갖춤과 능력의 완비'],
+        '白':['흰','백',5,'금','깨끗함과 순수'],
+        '許':['허락할','허',11,'토','관대한 허락과 포용'],
+        '南':['남녘','남',9,'화','따뜻한 남쪽 기운'],
+        '沈':['잠길','심',7,'수','깊은 사색과 침착함'],
+        '盧':['화로','노',16,'화','따뜻한 불의 기운'],
+        '河':['물','하',8,'수','흐르는 물의 유연함'],
+        '成':['이룰','성',6,'금','성취와 완성의 기운'],
+        '車':['수레','차',7,'화','전진과 이동의 활력'],
+        '周':['두루','주',8,'토','두루 살피는 지혜'],
+        '閔':['근심할','민',12,'수','깊은 사려와 배려'],
+        '孫':['손자','손',10,'금','대를 잇는 생명력'],
+        '丁':['넷째 천간','정',2,'화','바르고 곧은 기운'],
+        '任':['맡길','임',6,'수','신뢰와 책임감'],
+        '呂':['등뼈','여',7,'화','꿋꿋한 기개'],
+        '方':['모','방',4,'수','바른 방향과 질서'],
+        '羅':['그물','나',19,'화','넓게 퍼지는 영향력'],
+        '魏':['높을','위',18,'토','높고 위엄 있는 기운'],
+        '元':['으뜸','원',4,'목','으뜸가는 기운'],
+        '千':['일천','천',3,'금','많은 복과 풍요'],
+        '奉':['받들','봉',8,'목','공경과 섬김의 기운'],
+        '明':['밝을','명',8,'화','밝은 지혜와 명석함'],
+        '王':['임금','왕',4,'토','왕의 기운, 지도력'],
+        '慶':['경사','경',15,'화','경사스럽고 기쁜 기운'],
+        '皮':['가죽','피',5,'수','보호와 방어의 기운'],
+        '邊':['가','변',18,'수','넓은 경계와 탐험'],
+        '延':['늘일','연',7,'토','연장과 지속의 기운'],
+        '都':['도읍','도',11,'토','중심과 핵심의 기운'],
+        '石':['돌','석',5,'토','단단함과 변치 않는 의지'],
+        '池':['못','지',6,'수','깊은 물처럼 지혜'],
+        '廉':['청렴할','염',13,'수','깨끗한 정신과 청렴'],
+        '秋':['가을','추',9,'금','결실과 풍요의 계절'],
+        '琴':['거문고','금',12,'금','예술과 풍류'],
+        '禹':['임금이름','우',9,'토','홍수를 다스린 지도력'],
+        '陸':['뭍','육',11,'토','안정된 땅의 기운'],
+        '魯':['노둔할','노',15,'수','우직함과 성실'],
+        '諸':['모든','제',16,'금','모든 것을 아우르는 기운'],
+        '殷':['은나라','은',10,'토','은혜로운 기운'],
+        '片':['조각','편',4,'목','가벼움과 재치'],
+        '咸':['다','함',9,'수','모두를 포용하는 기운'],
+        '司':['맡을','사',5,'금','관리와 통솔의 능력'],
+        '庾':['곳집','유',11,'목','풍요를 저장하는 기운'],
+        '夏':['여름','하',10,'화','뜨거운 열정과 활력'],
+        '卓':['높을','탁',8,'화','탁월함과 뛰어남'],
+        '睦':['화목할','목',13,'목','화목함과 조화'],
+
+        // === 이름용 한자 - 목(木) 계열 ===
+        '甲':['갑옷','갑',5,'목','으뜸가는 기운, 시작의 힘'],
+        '乙':['새','을',1,'목','유연함과 적응력'],
+        '東':['동녘','동',8,'목','새로운 시작, 희망의 방향'],
+        '春':['봄','춘',9,'목','봄의 생명력과 새로운 시작'],
+        '松':['소나무','송',8,'목','변함없는 절개와 장수'],
+        '根':['뿌리','근',10,'목','근본과 튼튼한 기초'],
+        '植':['심을','식',12,'목','뿌리내림과 성장'],
+        '樹':['나무','수',16,'목','크게 자라는 나무의 기운'],
+        '榮':['영화','영',14,'목','번영과 영광'],
+        '森':['수풀','삼',12,'목','풍성한 수풀의 기운'],
+        '桓':['클','환',10,'목','크고 위엄 있는 나무'],
+        '杰':['호걸','걸',8,'목','뛰어난 인물'],
+        '柱':['기둥','주',9,'목','집안의 기둥, 든든한 지지'],
+        '棟':['마룻대','동',12,'목','집의 대들보, 핵심 인재'],
+        '楠':['녹나무','남',13,'목','귀한 나무, 고귀함'],
+        '梓':['가래나무','자',11,'목','고향과 근본'],
+        '彬':['빛날','빈',11,'목','문질빈빈, 빛나는 인품'],
+        '茂':['무성할','무',8,'목','무성하게 자라는 생명력'],
+        '英':['꽃부리','영',8,'목','빼어남과 영특함'],
+        '萬':['일만','만',12,'목','만 가지 풍요와 번영'],
+        '菜':['나물','채',11,'목','소박한 자연의 기운'],
+        '華':['빛날','화',10,'목','화려함과 빛남, 중화'],
+        '藝':['재주','예',18,'목','예술적 재능과 기예'],
+        '蘭':['난초','란',21,'목','고귀한 향기와 품격'],
+        '芝':['지초','지',6,'목','영지버섯, 상서로운 기운'],
+        '薰':['향기로울','훈',17,'목','향기롭고 교화하는 기운'],
+        '蓮':['연꽃','련',15,'목','더러움 속에서 피는 고결함'],
+        '花':['꽃','화',7,'목','아름다움과 화사함'],
+        '梅':['매화','매',10,'목','추위를 이기는 지조'],
+        '竹':['대나무','죽',6,'목','곧은 절개와 지조'],
+
+        // === 이름용 한자 - 화(火) 계열 ===
+        '丙':['밝을','병',5,'화','밝고 환한 기운'],
+        '丹':['붉을','단',4,'화','정성과 충심'],
+        '南':['남녘','남',9,'화','따뜻한 남쪽의 기운'],
+        '光':['빛','광',6,'화','빛나는 존재, 세상을 밝힘'],
+        '炳':['밝을','병',9,'화','크게 밝게 빛남'],
+        '煥':['빛날','환',13,'화','환하게 빛나는 기운'],
+        '燦':['빛날','찬',17,'화','찬란하게 빛남'],
+        '烈':['매울','렬',10,'화','강렬한 의지와 정열'],
+        '焕':['빛날','환',11,'화','빛나고 환한 기운'],
+        '熙':['빛날','희',15,'화','화목하게 빛남, 기쁨'],
+        '照':['비출','조',13,'화','세상을 비추는 빛'],
+        '燁':['빛날','엽',16,'화','불꽃처럼 화려하게 빛남'],
+        '炫':['빛날','현',9,'화','현란하게 빛남'],
+        '赫':['빛날','혁',14,'화','혁혁한 공로, 빛남'],
+        '暉':['빛날','휘',13,'화','해의 빛, 밝은 빛남'],
+        '曜':['빛날','요',18,'화','빛나는 별, 영롱함'],
+        '昊':['넓을','호',8,'화','넓은 하늘, 큰 기운'],
+        '晟':['밝을','성',10,'화','밝게 이루어짐'],
+        '晧':['밝을','호',11,'화','밝고 깨끗함'],
+        '旭':['해뜰','욱',6,'화','떠오르는 해, 희망'],
+        '昇':['오를','승',8,'화','떠오르는 기운, 상승'],
+        '星':['별','성',9,'화','밝게 빛나는 별'],
+        '映':['비칠','영',9,'화','빛이 비치듯 빛남'],
+        '暎':['빛날','영',12,'화','그림자처럼 비침, 비춤'],
+        '景':['볕','경',12,'화','아름다운 경치와 빛'],
+        '顯':['나타날','현',23,'화','드러나고 빛남'],
+        '灝':['넓을','호',21,'화','넓고 밝은 기운'],
+        '亮':['밝을','량',9,'화','밝고 환한 기운'],
+        '燃':['불탈','연',16,'화','불타오르는 열정'],
+        '煜':['빛날','욱',13,'화','불빛처럼 밝게 비춤'],
+
+        // === 이름용 한자 - 토(土) 계열 ===
+        '坤':['땅','곤',8,'토','어머니 대지의 기운'],
+        '城':['재','성',9,'토','성처럼 견고한 보호'],
+        '基':['터','기',11,'토','튼튼한 기초와 토대'],
+        '培':['북돋울','배',11,'토','기르고 북돋우는 기운'],
+        '均':['고를','균',7,'토','고르고 공평한 기운'],
+        '堅':['굳을','견',11,'토','굳건한 의지'],
+        '墉':['성','용',13,'토','높은 성벽, 방어력'],
+        '壽':['목숨','수',14,'토','장수와 건강'],
+        '增':['더할','증',15,'토','늘어나고 풍요로워짐'],
+        '塤':['훈','훈',13,'토','조화로운 소리'],
+        '境':['지경','경',14,'토','넓은 영역과 경지'],
+        '塡':['메울','진',13,'토','부족함을 채움'],
+        '垣':['담','원',9,'토','울타리, 보호'],
+        '圭':['홀','규',6,'토','임금의 홀, 권위'],
+        '堯':['높을','요',12,'토','높은 덕을 가진 사람'],
+        '嶺':['재','령',17,'토','높은 산의 기운'],
+        '岳':['큰산','악',8,'토','우뚝 선 큰 산'],
+        '峻':['높을','준',10,'토','높고 험준한 기운'],
+        '崇':['높을','숭',11,'토','높이 받들고 공경함'],
+        '嵐':['남기','남',12,'토','산의 기운, 안개'],
+
+        // === 이름용 한자 - 금(金) 계열 ===
+        '庚':['일곱째','경',8,'금','가을의 강인한 기운'],
+        '辛':['매울','신',7,'금','보석처럼 빛나는 섬세함'],
+        '鉉':['세발솥','현',13,'금','나라의 보물, 귀중함'],
+        '鎭':['진압할','진',18,'금','평정하고 안정시킴'],
+        '鎬':['호미','호',18,'금','개척과 개간의 힘'],
+        '鋼':['강철','강',16,'금','강철같은 의지'],
+        '錫':['주석','석',16,'금','하사하는 은총'],
+        '銀':['은','은',14,'금','은빛 고귀함'],
+        '鐘':['쇠북','종',20,'금','종소리처럼 울리는 명성'],
+        '鑑':['거울','감',22,'금','거울처럼 맑은 판단'],
+        '鑫':['쇠 많을','흠',24,'금','풍부한 재물'],
+        '鋒':['칼날','봉',15,'금','날카로운 재능'],
+        '鉅':['클','거',13,'금','크고 무거운 기운'],
+        '銓':['저울','전',14,'금','공정한 판단'],
+        '鑛':['광석','광',23,'금','보물을 품은 기운'],
+        '銘':['새길','명',14,'금','마음에 새기는 기운'],
+        '釗':['힘쓸','조',10,'금','힘써 노력하는 기운'],
+        '鉐':['돌','석',13,'금','단단한 기운'],
+        '劍':['칼','검',15,'금','결단력과 날카로움'],
+        '剛':['굳셀','강',10,'금','굳세고 강한 기운'],
+
+        // === 이름용 한자 - 수(水) 계열 ===
+        '壬':['아홉째','임',4,'수','큰 물의 기운'],
+        '癸':['열째','계',4,'수','작은 물의 지혜'],
+        '海':['바다','해',10,'수','넓은 바다의 포용력'],
+        '洋':['바다','양',9,'수','넓은 양의 기운'],
+        '淳':['순박할','순',11,'수','순수하고 맑은 기운'],
+        '澤':['못','택',16,'수','은택과 혜택'],
+        '泰':['클','태',9,'수','태평하고 안정된 큰 기운'],
+        '浩':['넓을','호',10,'수','넓고 큰 물의 기운'],
+        '潤':['윤택할','윤',15,'수','윤택하고 풍요로운 기운'],
+        '江':['강','강',6,'수','유유히 흐르는 강물'],
+        '湖':['호수','호',12,'수','고요한 호수의 지혜'],
+        '溪':['시내','계',13,'수','맑은 시냇물의 순수함'],
+        '深':['깊을','심',11,'수','깊은 지혜와 사려'],
+        '清':['맑을','청',11,'수','맑고 깨끗한 기운'],
+        '涵':['잠길','함',11,'수','품고 담는 포용력'],
+        '泳':['헤엄칠','영',8,'수','자유롭게 헤엄치는 기운'],
+        '漢':['한수','한',14,'수','큰 강의 기운, 한나라'],
+        '瀚':['넓을','한',19,'수','넓은 바다 같은 기운'],
+        '沐':['머리감을','목',7,'수','깨끗이 씻는 정화'],
+        '濬':['깊을','준',17,'수','깊고 맑은 기운'],
+        '泓':['깊을','굉',8,'수','깊은 물의 지혜'],
+        '津':['나루','진',9,'수','건너편으로 이끄는 기운'],
+        '淵':['못','연',11,'수','깊은 못의 지혜'],
+        '湧':['솟을','용',12,'수','솟아오르는 활력'],
+        '渝':['변할','유',12,'수','변화와 적응의 기운'],
+        '沅':['강이름','원',7,'수','맑은 강물의 기운'],
+
+        // === 자주 쓰는 이름 글자 (다양한 오행) ===
+        '仁':['어질','인',4,'목','어질고 인자한 덕'],
+        '義':['옳을','의',13,'금','올바른 의로움'],
+        '禮':['예도','례',17,'화','예절과 격식'],
+        '智':['슬기','지',12,'화','지혜와 슬기로움'],
+        '信':['믿을','신',9,'금','믿음과 신뢰'],
+        '忠':['충성','충',8,'화','충성스러운 마음'],
+        '孝':['효도','효',7,'수','효도와 공경'],
+        '德':['큰','덕',15,'화','큰 덕과 인품'],
+        '道':['길','도',13,'화','올바른 길, 도리'],
+        '善':['착할','선',12,'금','착하고 선한 마음'],
+        '美':['아름다울','미',9,'수','아름다움과 미덕'],
+        '正':['바를','정',5,'금','바르고 정직한 기운'],
+        '誠':['정성','성',14,'금','정성과 진심'],
+        '真':['참','진',10,'금','참되고 진실한 기운'],
+        '雅':['우아할','아',12,'목','우아함과 품격'],
+        '恩':['은혜','은',10,'토','은혜와 보답'],
+        '愛':['사랑','애',13,'토','사랑과 자애'],
+        '慧':['슬기로울','혜',15,'수','밝은 지혜와 총명'],
+        '賢':['어질','현',15,'목','어질고 현명한 기운'],
+        '淑':['맑을','숙',11,'수','맑고 단아한 기운'],
+
+        '大':['큰','대',3,'화','크고 넓은 기운'],
+        '天':['하늘','천',4,'화','하늘의 큰 기운'],
+        '永':['길','영',5,'수','길고 오래가는 기운'],
+        '玉':['구슬','옥',5,'금','옥처럼 아름답고 귀함'],
+        '民':['백성','민',5,'수','백성을 위하는 마음'],
+        '世':['대','세',5,'토','세상을 이끄는 기운'],
+        '弘':['넓을','홍',5,'수','넓게 펼치는 기운'],
+        '宇':['집','우',6,'토','우주처럼 넓은 기운'],
+        '守':['지킬','수',6,'금','굳건히 지키는 의지'],
+        '志':['뜻','지',7,'화','큰 뜻과 의지'],
+        '秀':['빼어날','수',7,'금','빼어나게 뛰어남'],
+        '孟':['맏','맹',8,'수','으뜸가는 위치'],
+        '承':['이을','승',8,'금','대를 잇는 기운'],
+        '昌':['창성할','창',8,'화','번창하고 성대한 기운'],
+        '武':['호반','무',8,'수','무인의 용맹함'],
+        '奇':['기이할','기',8,'목','특별한 재능과 기운'],
+        '尙':['오히려','상',8,'금','높이 받드는 기운'],
+        '泉':['샘','천',9,'수','마르지 않는 생명력'],
+        '俊':['준걸','준',9,'화','준수하고 뛰어난 인재'],
+        '相':['서로','상',9,'목','서로 돕는 화합'],
+        '柄':['자루','병',9,'목','권력과 실권'],
+        '彦':['선비','언',9,'목','훌륭한 선비'],
+        '重':['무거울','중',9,'토','무게감과 신중함'],
+        '勇':['날랠','용',9,'토','용감하고 씩씩한 기운'],
+        '奎':['별이름','규',9,'토','문장의 별, 학문'],
+        '哲':['밝을','철',10,'화','밝은 지혜, 철학'],
+        '恕':['용서할','서',10,'화','용서와 관용'],
+        '容':['얼굴','용',10,'토','용모와 포용력'],
+        '泰':['클','태',10,'수','크고 태평한 기운'],
+        '益':['더할','익',10,'토','더하고 이로운 기운'],
+        '修':['닦을','수',10,'금','수양하고 닦는 기운'],
+        '珍':['보배','진',9,'화','보배같이 소중한 기운'],
+        '振':['떨칠','진',10,'화','떨쳐 일으키는 기운'],
+        '祐':['도울','우',9,'토','하늘이 돕는 기운'],
+        '祥':['상서로울','상',10,'금','상서롭고 길한 기운'],
+        '真':['참','진',10,'금','참되고 진실한 기운'],
+        '耕':['밭갈','경',10,'목','성실하게 밭 가는 근면'],
+        '致':['이를','치',10,'화','뜻을 이루는 기운'],
+        '豪':['호걸','호',14,'수','호걸의 기운, 씩씩함'],
+        '國':['나라','국',11,'목','나라를 빛내는 기운'],
+        '強':['강할','강',11,'목','강인한 힘과 의지'],
+        '敏':['민첩할','민',11,'수','민첩하고 영리한 기운'],
+        '彩':['채색','채',11,'화','화려한 색채의 기운'],
+        '康':['편안할','강',11,'토','건강하고 편안한 기운'],
+        '鳳':['봉새','봉',14,'화','봉황의 고귀한 기운'],
+        '龍':['용','룡',16,'토','용의 강대한 기운'],
+        '翔':['날','상',12,'금','하늘을 나는 큰 기운'],
+        '雲':['구름','운',12,'수','구름처럼 자유로운 기운'],
+        '雄':['수컷','웅',12,'토','웅장하고 힘찬 기운'],
+        '聖':['성인','성',13,'토','성인의 덕과 지혜'],
+        '瑞':['상서','서',13,'금','상서로운 기운, 길조'],
+        '瑛':['옥빛','영',12,'토','옥의 빛처럼 빛남'],
+        '琳':['구슬','림',12,'금','아름다운 보석의 기운'],
+        '琴':['거문고','금',12,'금','예술과 풍류의 기운'],
+        '瑾':['아름다운옥','근',15,'금','아름다운 옥의 기운'],
+        '琪':['아름다운옥','기',12,'금','아름다운 옥의 기운'],
+        '璿':['옥','선',16,'금','빛나는 옥의 기운'],
+        '璞':['다듬지않은옥','박',16,'금','꾸미지 않은 순수한 아름다움'],
+
+        '鎮':['진정할','진',18,'금','안정시키는 기운'],
+        '勳':['공','훈',16,'화','큰 공훈을 세우는 기운'],
+        '範':['법','범',15,'목','모범이 되는 기운'],
+        '慶':['경사','경',15,'화','경사스럽고 기쁜 기운'],
+        '廣':['넓을','광',14,'목','넓게 펼치는 기운'],
+        '遠':['멀','원',13,'토','멀리 내다보는 지혜'],
+        '錦':['비단','금',16,'금','비단처럼 화려하고 귀함'],
+        '翼':['날개','익',17,'금','날개를 펴고 비상하는 기운'],
+        '濟':['건널','제',17,'수','어려움을 건너는 구원'],
+        '學':['배울','학',16,'수','학문과 배움의 기운'],
+        '憲':['법','헌',16,'목','법도와 규범의 기운'],
+        '叡':['슬기','예',16,'금','슬기롭고 총명한 기운'],
+        '穆':['화목할','목',16,'금','화목하고 공경하는 기운'],
+
+        '有':['있을','유',6,'토','있음과 소유, 존재감'],
+        '在':['있을','재',6,'토','존재하고 머무르는 기운'],
+        '如':['같을','여',6,'화','바람대로 되는 기운'],
+        '妍':['고울','연',7,'수','고운 아름다움'],
+        '伯':['맏','백',7,'수','맏이의 지도력'],
+        '希':['바랄','희',7,'수','희망과 바람의 기운'],
+        '孜':['힘쓸','자',7,'금','부지런히 힘쓰는 기운'],
+        '辰':['별','진',7,'토','북극성의 기운, 방향'],
+        '延':['늘일','연',7,'토','연장과 지속의 기운'],
+        '材':['재목','재',7,'목','쓸모 있는 인재'],
+        '完':['완전할','완',7,'토','완전함과 온전함'],
+        '亨':['형통할','형',7,'수','모든 일이 형통함'],
+        '利':['이로울','리',7,'금','이롭고 유리한 기운'],
+        '佑':['도울','우',7,'토','하늘이 돕는 기운'],
+
+        '定':['정할','정',8,'화','안정되고 확고한 기운'],
+        '河':['물','하',8,'수','흐르는 물의 유연함'],
+        '坊':['마을','방',7,'토','안정된 터전'],
+        '孟':['맏','맹',8,'수','우두머리의 기운'],
+        '尚':['오히려','상',8,'금','높이 받드는 기운'],
+        '和':['화할','화',8,'토','화합과 평화의 기운'],
+        '忻':['기쁠','흔',7,'화','기쁘고 즐거운 기운'],
+        '政':['정사','정',9,'화','바른 정치와 통치'],
+        '恒':['항상','항',9,'수','항상 변함없는 기운'],
+        '柔':['부드러울','유',9,'목','부드럽고 유연한 기운'],
+        '冠':['갓','관',9,'목','으뜸가는 최고의 기운'],
+        '彰':['드러날','창',14,'화','드러나고 빛나는 기운'],
+        '碩':['클','석',14,'토','크고 넉넉한 기운'],
+        '漢':['한수','한',14,'수','큰 한수의 기운'],
+        '壽':['목숨','수',14,'금','장수와 건강의 기운'],
+        '維':['벼리','유',14,'토','근본을 잡는 기운'],
+        '銀':['은','은',14,'금','은빛 고귀함'],
+        '嘉':['아름다울','가',14,'목','아름답고 좋은 기운'],
+        '碧':['푸를','벽',14,'수','푸르고 맑은 기운'],
+        '榮':['영화','영',14,'목','영화로운 번영'],
+        '寧':['편안할','녕',14,'화','편안하고 안녕한 기운'],
+        '豪':['호걸','호',14,'수','호걸의 기운, 씩씩함'],
+        '瑤':['아름다운옥','요',14,'토','아름다운 옥의 기운'],
+    };
+
+    // 한자 조회
+    function lookupHanja(char) {
+        if (!char) return null;
+        const entry = HANJA_DICT[char];
+        if (!entry) return null;
+        return { char, hun: entry[0], eum: entry[1], strokes: entry[2], element: entry[3], meaning: entry[4] };
+    }
+
+    // 수리오행: 끝자리로 판단
+    function getNumElement(n) {
+        const d = n % 10;
+        if (d === 1 || d === 2) return '목';
+        if (d === 3 || d === 4) return '화';
+        if (d === 5 || d === 6) return '토';
+        if (d === 7 || d === 8) return '금';
+        return '수'; // 9, 0
+    }
+
+    // 수리 길흉 (1~81 기준)
+    const LUCKY_NUMBERS = new Set([1,3,5,6,7,8,11,13,15,16,17,18,21,23,24,25,29,31,32,33,35,37,39,41,45,47,48,52,57,61,63,65,67,68,73,75,81]);
+    const UNLUCKY_NUMBERS = new Set([2,4,9,10,12,14,19,20,22,26,27,28,30,34,36,40,42,43,44,46,49,50,51,53,54,56,58,59,60,62,64,66,69,70,71,72,74,76,77,78,79,80]);
+
+    function isLuckyNumber(n) {
+        const m = ((n - 1) % 81) + 1;
+        if (LUCKY_NUMBERS.has(m)) return 'lucky';
+        if (UNLUCKY_NUMBERS.has(m)) return 'unlucky';
+        return 'neutral';
+    }
+
+    // 한자 오행과 사주 오행의 조화 분석
+    function analyzeCharSajuHarmony(charEl, sajuElements) {
+        if (!sajuElements) return null;
+        const lacking = Object.entries(sajuElements).filter(([, v]) => v === 0).map(([k]) => k);
+        const excess = Object.entries(sajuElements).filter(([, v]) => v >= 4).map(([k]) => k);
+        if (lacking.includes(charEl)) return { type: 'supplement', msg: `사주에서 부족한 ${charEl} 기운을 보완` };
+        if (excess.includes(charEl)) return { type: 'excess', msg: `사주에서 이미 과한 ${charEl} 기운` };
+        return { type: 'neutral', msg: '사주와 무난한 조화' };
+    }
+
+    function analyzeName(hanjaChars, sajuElements) {
+        // hanjaChars: { surname: ['金'], given: ['有','煥'] } - 한자 배열
+        if (!hanjaChars || !hanjaChars.surname.length || !hanjaChars.given.length) return null;
+
+        const surnameInfos = hanjaChars.surname.map(c => lookupHanja(c));
+        const givenInfos = hanjaChars.given.map(c => lookupHanja(c));
+
+        // 한자 사전에 없는 글자가 있으면 null 반환
+        if (surnameInfos.some(i => !i) || givenInfos.some(i => !i)) return null;
+
+        const allInfos = [...surnameInfos, ...givenInfos];
+        const surnameStrokes = surnameInfos.map(i => i.strokes);
+        const givenNameStrokes = givenInfos.map(i => i.strokes);
+        const totalSurname = surnameStrokes.reduce((a, b) => a + b, 0);
+        const totalGiven = givenNameStrokes.reduce((a, b) => a + b, 0);
+        const totalAll = totalSurname + totalGiven;
+
+        // === 1. 자의(字意) 분석 - 한자 뜻풀이 ===
+        const charAnalysis = allInfos.map(info => ({
+            char: info.char,
+            reading: `${info.hun} ${info.eum}`,
+            strokes: info.strokes,
+            element: info.element,
+            meaning: info.meaning,
+            sajuHarmony: analyzeCharSajuHarmony(info.element, sajuElements)
+        }));
+
+        // 이름 전체 오행 구성
+        const nameElements = { '목':0,'화':0,'토':0,'금':0,'수':0 };
+        allInfos.forEach(i => nameElements[i.element]++);
+
+        // === 2. 오격 수리 분석 ===
+        let cheonGyeok, inGyeok, jiGyeok, oeGyeok, chongGyeok;
+        if (surnameStrokes.length === 1 && givenNameStrokes.length === 2) {
+            cheonGyeok = surnameStrokes[0] + 1;
+            inGyeok = surnameStrokes[0] + givenNameStrokes[0];
+            jiGyeok = givenNameStrokes[0] + givenNameStrokes[1];
+            chongGyeok = totalAll;
+            oeGyeok = cheonGyeok + jiGyeok - inGyeok;
+        } else if (surnameStrokes.length === 1 && givenNameStrokes.length === 1) {
+            cheonGyeok = surnameStrokes[0] + 1;
+            inGyeok = surnameStrokes[0] + givenNameStrokes[0];
+            jiGyeok = givenNameStrokes[0] + 1;
+            chongGyeok = totalAll;
+            oeGyeok = 2;
+        } else if (surnameStrokes.length === 2) {
+            cheonGyeok = surnameStrokes[0] + surnameStrokes[1];
+            inGyeok = surnameStrokes[1] + givenNameStrokes[0];
+            jiGyeok = givenNameStrokes.reduce((a, b) => a + b, 0) + (givenNameStrokes.length === 1 ? 1 : 0);
+            chongGyeok = totalAll;
+            oeGyeok = cheonGyeok + jiGyeok - inGyeok;
+        } else {
+            return null;
+        }
+        oeGyeok = Math.max(1, oeGyeok);
+
+        const gyeoks = [
+            { name: '천격', hanja: '天格', value: cheonGyeok, desc: '조상운, 윗사람과의 관계' },
+            { name: '인격', hanja: '人格', value: inGyeok, desc: '주운(主運), 성격과 능력의 핵심' },
+            { name: '지격', hanja: '地格', value: jiGyeok, desc: '초년운, 가정환경, 건강' },
+            { name: '외격', hanja: '外格', value: oeGyeok, desc: '대인관계, 사회적 환경' },
+            { name: '총격', hanja: '總格', value: chongGyeok, desc: '총운, 말년운, 인생 전체' }
+        ];
+        gyeoks.forEach(g => {
+            g.element = getNumElement(g.value);
+            g.luck = isLuckyNumber(g.value);
+            g.luckLabel = g.luck === 'lucky' ? '길(吉)' : g.luck === 'unlucky' ? '흉(凶)' : '반길반흉';
+        });
+
+        // === 3. 오행 상생상극 분석 ===
+        const inEl = gyeoks[1].element;
+        const relations = [];
+        const cheonRel = getElRel(inEl, gyeoks[0].element);
+        relations.push({ pair: '인격→천격', rel: cheonRel, desc: cheonRel === '상생' ? '윗사람의 도움을 잘 받습니다.' : cheonRel === '상극' ? '윗사람과 갈등이 있을 수 있습니다.' : '보통의 관계입니다.' });
+        const jiRel = getElRel(inEl, gyeoks[2].element);
+        relations.push({ pair: '인격→지격', rel: jiRel, desc: jiRel === '상생' ? '가정운과 초년운이 좋습니다.' : jiRel === '상극' ? '초년에 어려움이 있을 수 있습니다.' : '보통의 가정운입니다.' });
+
+        // === 4. 사주-이름 종합 궁합 ===
+        let sajuCompat = null;
+        if (sajuElements) {
+            const lacking = Object.entries(sajuElements).filter(([, v]) => v === 0).map(([k]) => k);
+            const supplements = lacking.filter(el => nameElements[el] > 0);
+            const excess = Object.entries(sajuElements).filter(([, v]) => v >= 4).map(([k]) => k);
+            const conflicts = excess.filter(el => nameElements[el] > 0);
+
+            let message;
+            if (supplements.length > 0 && conflicts.length === 0) {
+                message = `이름의 한자가 사주에서 부족한 ${supplements.map(e => `${e}(${ELEMENT_NAMES[e]})`).join(', ')} 기운을 보완해줍니다. 매우 좋은 이름입니다!`;
+            } else if (supplements.length > 0 && conflicts.length > 0) {
+                message = `${supplements.map(e => `${e}(${ELEMENT_NAMES[e]})`).join(', ')} 기운을 보완하지만, ${conflicts.map(e => `${e}(${ELEMENT_NAMES[e]})`).join(', ')} 기운이 과할 수 있습니다.`;
+            } else if (lacking.length > 0) {
+                message = `사주에서 부족한 ${lacking.map(e => `${e}(${ELEMENT_NAMES[e]})`).join(', ')} 기운이 이름에 없습니다. 해당 기운의 한자를 고려해볼 수 있습니다.`;
+            } else {
+                message = '사주 오행이 균형 잡혀 있어 이름과의 보완이 크게 필요하지 않습니다.';
+            }
+
+            sajuCompat = { lacking, supplements, conflicts, nameElements, isGood: supplements.length > 0 && conflicts.length === 0, message };
+        }
+
+        // === 5. 종합 점수 ===
+        let nameScore = 50;
+        // 수리 길흉
+        gyeoks.forEach(g => { if (g.luck === 'lucky') nameScore += 7; if (g.luck === 'unlucky') nameScore -= 5; });
+        // 오행 관계
+        relations.forEach(r => { if (r.rel === '상생') nameScore += 5; if (r.rel === '상극') nameScore -= 5; });
+        // 사주 보완
+        if (sajuCompat && sajuCompat.isGood) nameScore += 10;
+        if (sajuCompat && sajuCompat.conflicts && sajuCompat.conflicts.length > 0) nameScore -= 5;
+        // 한자 뜻의 조화 (보충 글자가 있으면 가점)
+        charAnalysis.forEach(c => { if (c.sajuHarmony && c.sajuHarmony.type === 'supplement') nameScore += 5; });
+        nameScore = Math.max(0, Math.min(100, nameScore));
+
+        return { charAnalysis, gyeoks, relations, sajuCompat, nameScore, nameElements };
+    }
+
+    function getElRel(el1, el2) {
+        const cycle = ['목','화','토','금','수'];
+        const i1 = cycle.indexOf(el1), i2 = cycle.indexOf(el2);
+        const diff = ((i2 - i1) + 5) % 5;
+        if (diff === 1 || diff === 4) return '상생';
+        if (diff === 2 || diff === 3) return '상극';
+        return '비화';
+    }
+
+    // ============================================================
+    // 기존 핵심 로직 (사주 계산, 오행, 용신, 십신 등)
+    // ============================================================
+    function getHourBranch(h, m) { const t=h*60+m; if(t>=1380||t<60)return 0; if(t<180)return 1; if(t<300)return 2; if(t<420)return 3; if(t<540)return 4; if(t<660)return 5; if(t<780)return 6; if(t<900)return 7; if(t<1020)return 8; if(t<1140)return 9; if(t<1260)return 10; return 11; }
+    function getSajuMonth(y,m,d) { for(let i=SOLAR_TERMS.length-1;i>=0;i--){const[sm,sd]=SOLAR_TERMS[i];if(m>sm||(m===sm&&d>=sd))return{sajuMonth:SOLAR_TERMS[i][2],termName:SOLAR_TERMS[i][3]};} return{sajuMonth:11,termName:'대설'}; }
+    function getSajuYear(y,m,d) { return(m<2||(m===2&&d<4))?y-1:y; }
+    function getDayPillar(y,m,d) { const dd=Math.floor(new Date(Date.UTC(y,m-1,d)).getTime()/86400000); return{stem:((dd%10)+7+10)%10,branch:((dd%12)+5+12)%12}; }
+
+    function calculateFourPillars(year,month,day,hour,minute) {
+        const sajuYear=getSajuYear(year,month,day);
+        const yearStem=((sajuYear-4)%10+10)%10, yearBranch=((sajuYear-4)%12+12)%12;
+        const{sajuMonth,termName}=getSajuMonth(year,month,day);
+        const monthBranch=(sajuMonth+1)%12;
+        const monthStem=((yearStem%5)*2+2+sajuMonth-1)%10;
+        let adjD=day,adjM=month,adjY=year;
+        if(hour>=23){const dd=new Date(year,month-1,day+1);adjY=dd.getFullYear();adjM=dd.getMonth()+1;adjD=dd.getDate();}
+        const{stem:dayStem,branch:dayBranch}=getDayPillar(adjY,adjM,adjD);
+        const hourBranch=getHourBranch(hour,minute);
+        const hourStem=((dayStem%5)*2+hourBranch)%10;
+        return{year:{stem:yearStem,branch:yearBranch},month:{stem:monthStem,branch:monthBranch},day:{stem:dayStem,branch:dayBranch},hour:{stem:hourStem,branch:hourBranch},sajuYear,sajuMonth,termName};
+    }
+
+    function analyzeElements(pillars) {
+        const c={'목':0,'화':0,'토':0,'금':0,'수':0};
+        ['year','month','day','hour'].forEach(p=>{c[STEM_ELEMENTS[pillars[p].stem]]++;c[BRANCH_ELEMENTS[pillars[p].branch]]++;});
+        return c;
+    }
+
+    function determineYongsin(pillars,ec) {
+        const dayEl=STEM_ELEMENTS[pillars.day.stem];
+        const ds=calculateDayStrength(pillars,ec,dayEl);
+        const producing={'목':'수','화':'목','토':'화','금':'토','수':'금'};
+        const produced={'목':'화','화':'토','토':'금','금':'수','수':'목'};
+        const controlled={'목':'토','화':'금','토':'수','금':'목','수':'화'};
+        let y,r;
+        if(ds==='strong'){const c=[produced[dayEl],controlled[dayEl]];y=c.reduce((a,b)=>ec[a]<=ec[b]?a:b);r='일간이 강하여 기운을 빼주는';}
+        else{const c=[producing[dayEl],dayEl];y=c.reduce((a,b)=>ec[a]<=ec[b]?a:b);r='일간이 약하여 힘을 보태주는';}
+        return{yongsin:y,reason:r,dayStrength:ds,dayElement:dayEl};
+    }
+
+    function calculateDayStrength(p,ec,dayEl) { const pr={'목':'수','화':'목','토':'화','금':'토','수':'금'}; const s=ec[dayEl]+ec[pr[dayEl]]; const t=Object.values(ec).reduce((a,b)=>a+b,0); return s>=t/2?'strong':'weak'; }
+
+    function calculateTenGods(pillars) {
+        const dayEl=STEM_ELEMENTS[pillars.day.stem],dayYY=STEM_YINYANG[pillars.day.stem];
+        const r={};
+        ['year','month','hour'].forEach(p=>{r[p]={stem:getTenGod(dayEl,dayYY,STEM_ELEMENTS[pillars[p].stem],STEM_YINYANG[pillars[p].stem]),branch:getTenGod(dayEl,dayYY,BRANCH_ELEMENTS[pillars[p].branch],BRANCH_YINYANG[pillars[p].branch])};});
+        return r;
+    }
+
+    function getTenGod(dE,dY,tE,tY) { const c=['목','화','토','금','수']; const diff=((c.indexOf(tE)-c.indexOf(dE))+5)%5; const s=dY===tY; return[s?'비견':'겁재',s?'식신':'상관',s?'편재':'정재',s?'편관':'정관',s?'편인':'정인'][diff]; }
+
+    function calculateDaeun(pillars,year,month,day,gender) {
+        const yy=STEM_YINYANG[pillars.year.stem]; const isMale=gender==='male';
+        const forward=(yy==='양'&&isMale)||(yy==='음'&&!isMale);
+        const startAge=calcDaeunStart(year,month,day,forward);
+        const list=[]; let cs=pillars.month.stem,cb=pillars.month.branch;
+        for(let i=0;i<10;i++){if(forward){cs=(cs+1)%10;cb=(cb+1)%12;}else{cs=(cs-1+10)%10;cb=(cb-1+12)%12;}const a=startAge+i*10;list.push({stem:cs,branch:cb,startAge:a,endAge:a+9,element:STEM_ELEMENTS[cs],branchElement:BRANCH_ELEMENTS[cb]});}
+        return{daeunList:list,forward,startAge};
+    }
+
+    function calcDaeunStart(y,m,d,forward) {
+        const terms=SOLAR_TERMS.map(([mm,dd])=>({month:mm,day:dd})); const birth=new Date(y,m-1,d); let target;
+        if(forward){for(const st of terms){const dd=new Date(y,st.month-1,st.day);if(dd>birth){target=dd;break;}}if(!target)target=new Date(y+1,terms[0].month-1,terms[0].day);}
+        else{for(let i=terms.length-1;i>=0;i--){const dd=new Date(y,terms[i].month-1,terms[i].day);if(dd<birth){target=dd;break;}}if(!target)target=new Date(y-1,terms[terms.length-1].month-1,terms[terms.length-1].day);}
+        return Math.round(Math.abs(Math.floor((birth-target)/86400000))/3);
+    }
+
+    function analyzeBranchRelations(branches) {
+        const rels=[]; const yH=[[0,1],[2,11],[3,10],[4,9],[5,8],[6,7]]; const yN=['자축합토','인해합목','묘술합화','진유합금','사신합수','오미합화'];
+        const sH=[[2,6,10],[11,3,7],[8,0,4],[5,9,1]]; const sE=['화','목','수','금'];
+        const ch=[[0,6],[1,7],[2,8],[3,9],[4,10],[5,11]]; const cN=['자오충','축미충','인신충','묘유충','진술충','사해충'];
+        for(let i=0;i<branches.length;i++)for(let j=i+1;j<branches.length;j++){yH.forEach((p,idx)=>{if((branches[i]===p[0]&&branches[j]===p[1])||(branches[i]===p[1]&&branches[j]===p[0]))rels.push({type:'합',detail:yN[idx],positive:true});});ch.forEach((p,idx)=>{if((branches[i]===p[0]&&branches[j]===p[1])||(branches[i]===p[1]&&branches[j]===p[0]))rels.push({type:'충',detail:cN[idx],positive:false});});}
+        sH.forEach((trio,idx)=>{const c=trio.filter(b=>branches.includes(b)).length;if(c>=2)rels.push({type:'반합',detail:`${sE[idx]}국 반합`,positive:true});if(c===3)rels.push({type:'삼합',detail:`${sE[idx]}국 삼합`,positive:true});});
+        return rels;
+    }
+
+    // ============================================================
+    // 해석 데이터 (일간별 상세)
+    // ============================================================
+    const DAY_MASTER_TRAITS = {
+        0:{title:'갑목(甲木) - 큰 나무',personality:'곧은 성격으로 정의감이 강하고 리더십이 있습니다. 큰 나무처럼 듬직하고 포용력이 있으나, 고집이 세고 융통성이 부족할 수 있습니다.',personality_detail:'외면적으로 강해 보이지만 내면에는 따뜻한 면이 있습니다. 자신만의 기준이 확고해서 타인의 의견을 수용하기 어려울 때가 있으니 감정 표현을 연습하세요.',study:'집중력이 뛰어나고 한 분야를 깊이 파고드는 학구열이 있습니다. 법학, 행정학, 경영학 등 체계적인 학문에 적성이 맞습니다.',wealth:'장기적인 투자에 강하며, 부동산이나 안정적인 자산에 강점이 있습니다. 지나친 자존심으로 손해를 볼 수 있으니 겸손함을 유지하세요.',career:'정치, 법조계, 교육, 경영, CEO, 고위 공무원 분야에서 두각을 나타냅니다.',health:'간, 담낭, 근육, 관절에 주의. 과로하기 쉬운 체질이므로 충분한 휴식이 중요합니다.',health_detail:'봄철 환절기에 체력이 떨어질 수 있고, 등산이나 산림욕이 건강에 큰 도움이 됩니다.',love:'한번 마음을 주면 변함없이 끝까지 가는 타입입니다.',love_detail:'연애 초기에는 다가가기 어려운 인상을 주지만 깊이 알수록 매력이 드러납니다. 배우자의 감정에 좀 더 세심해질 필요가 있습니다.',relations:'의리가 강해 친구 관계가 오래 유지됩니다. 리더십이 있어 모임의 중심이 되며, 경청하는 자세가 필요합니다.',lucky:{color:'초록색, 청색',direction:'동쪽',number:'3, 8',season:'봄',item:'나무 소품, 화분, 녹색 의류'}},
+        1:{title:'을목(乙木) - 꽃과 풀',personality:'부드럽고 유연하며 적응력이 뛰어납니다. 외유내강의 성격으로 예술적 감각이 뛰어나고 섬세합니다.',personality_detail:'사교성이 좋고 눈치가 빠릅니다. 속마음을 잘 드러내지 않아 가까운 사람도 진심을 모를 때가 있으니 자기 의견을 적극 표현하세요.',study:'암기력과 이해력이 좋아 문학, 예술, 디자인, 심리학 등 감성적 학문에 강합니다. 선택과 집중이 필요합니다.',wealth:'알뜰하게 모으는 타입. 예술, 뷰티 관련 분야에서 수입원을 찾으면 좋습니다.',career:'예술, 디자인, 문학, 상담, 서비스업, 뷰티, 인테리어에서 능력 발휘.',health:'간, 신경계, 피부, 알레르기 주의. 스트레스가 피부 트러블로 나타나기 쉽습니다.',health_detail:'요가나 필라테스 같은 유연성 운동이 잘 맞습니다. 허브티가 심신 안정에 도움됩니다.',love:'감성적이고 로맨틱한 연애. 상대를 잘 배려하며 헌신적입니다.',love_detail:'관계가 깊어지면 의존적이 될 수 있으니 자기만의 시간과 취미를 가지세요.',relations:'대인관계가 원만하고 사교적입니다. 가까운 사람에게 마음을 더 여세요.',lucky:{color:'연두색, 파스텔톤',direction:'동쪽',number:'3, 8',season:'봄',item:'꽃 장식, 향수, 리본'}},
+        2:{title:'병화(丙火) - 태양',personality:'밝고 활발하며 카리스마가 넘칩니다. 태양처럼 사교성이 좋고 인기가 많습니다. 열정적이나 지구력이 부족할 수 있습니다.',personality_detail:'어디서든 분위기 메이커. 감정 기복이 있을 수 있고, 섬세한 부분을 놓칠 수 있으니 꼼꼼함을 보완하세요.',study:'직관력과 이해력이 뛰어나지만 깊이 있는 반복 학습에 흥미를 잃기 쉽습니다. 경쟁적 환경에서 더 좋은 성과.',wealth:'큰돈을 벌 수 있지만 씀씀이도 큰 편. 충동 구매를 조절하고 자동이체 저축을 활용하세요.',career:'방송, 연예, 마케팅, 외교, 강연, SNS 인플루언서, 영업에서 성공.',health:'심장, 혈압, 눈, 소장 주의. 과도한 활동으로 탈진할 수 있으니 충분한 수면이 중요.',health_detail:'여름철 더위에 약하고 열이 많은 체질. 수영이나 물가 운동이 균형을 잡아줍니다.',love:'뜨겁고 적극적인 연애. 매력이 넘쳐 이성에게 인기가 많습니다.',love_detail:'열정이 식으면 관심이 줄어들 수 있어 장기적 관계 유지에 노력이 필요합니다.',relations:'어디서든 인기 만점. 넓은 인맥을 가지지만 깊은 관계를 소중히 여기세요.',lucky:{color:'빨간색, 주황색',direction:'남쪽',number:'2, 7',season:'여름',item:'캔들, 조명, 선글라스'}},
+        3:{title:'정화(丁火) - 촛불',personality:'따뜻하고 세심하며 지적입니다. 학문과 연구에 뛰어나고 통찰력이 있습니다.',personality_detail:'조용하지만 영향력이 큰 사람. 완벽주의적 성향이 있어 자기를 과도하게 몰아붙일 수 있습니다.',study:'집중력이 높고 분석력이 뛰어나 IT, 과학, 철학, 심리학 등 깊이 있는 학문에 적성.',wealth:'꾸준한 저축형. 전문직에서 안정적 소득. 변동성 높은 투자보다 채권이나 적금이 적합.',career:'학문, 연구, IT, 컨설팅, 교육, 프로그래밍, 데이터 분석.',health:'심장, 소장, 눈, 신경계 주의. 불면증에 걸리기 쉬우니 명상과 충분한 수면이 중요.',health_detail:'디지털 기기 사용을 줄이고 따뜻한 차를 마시는 시간이 필요합니다.',love:'깊은 정을 주며 한 사람에게 집중. 은은하고 깊은 사랑.',love_detail:'내면은 뜨거운 사랑을 하지만 집착적일 수 있으니 신뢰를 쌓는 것이 중요합니다.',relations:'소수의 깊은 관계를 추구. 비밀을 잘 지키고 신뢰할 수 있는 친구입니다.',lucky:{color:'보라색, 와인색',direction:'남쪽',number:'2, 7',season:'여름',item:'캔들, 아로마, 독서등'}},
+        4:{title:'무토(戊土) - 큰 산',personality:'묵직하고 신뢰감이 있으며 포용력이 넓습니다. 안정적이고 변함없는 성격.',personality_detail:'듬직하고 성실하여 안정감을 주지만 새로운 변화에 적응이 느립니다. 유연성을 기르세요.',study:'꾸준하고 성실한 학습. 건축, 토목, 부동산, 경제학, 역사학이 적성.',wealth:'안정적 재산 축적형. 부동산에 강하며 보증이나 남의 사업 투자는 피하세요.',career:'부동산, 건축, 금융, 농업, 유통, 공무원, 은행원, 건설업.',health:'위장, 비장, 피부, 당뇨 주의. 과식하기 쉬운 체질이니 식사량을 조절하세요.',health_detail:'환절기 소화 불량 주의. 등산이 최고의 건강 운동입니다.',love:'진중하고 신중한 연애. 믿음직스럽지만 표현이 서투릅니다.',love_detail:'연애가 느리지만 진심을 다합니다. 가끔은 말로도 사랑을 전하세요.',relations:'소수의 오래된 친구를 중요시. 약속을 잘 지키는 듬직한 존재.',lucky:{color:'노란색, 갈색',direction:'중앙',number:'5, 10',season:'환절기',item:'도자기, 크리스탈, 흙 화분'}},
+        5:{title:'기토(己土) - 논밭',personality:'온화하고 겸손하며 실속 있습니다. 세심하고 꼼꼼하며 내적으로 강합니다.',personality_detail:'남을 돕는 것을 좋아하지만 걱정이 많고 우유부단한 면이 있습니다. 자기 확신을 키우세요.',study:'꼼꼼하고 착실한 학습자. 요리, 약학, 교육학, 영양학 등 실생활 학문이 적성.',wealth:'알뜰 살림꾼. 요식업, 교육 관련 사업이 적합하며 가계부 활용이 효과적.',career:'요식업, 유통, 교육, 상담, 농업, 영양사, 간호사, 사회복지사.',health:'위장, 소화기, 피부 주의. 소식이 건강의 비결.',health_detail:'따뜻한 음식을 먹고 차가운 음식은 줄이세요. 텃밭 가꾸기도 심신에 좋습니다.',love:'현실적이고 안정적인 연애. 알뜰하게 상대를 챙깁니다.',love_detail:'함께할수록 편안한 매력. 가끔 특별한 데이트가 관계에 활력을 줍니다.',relations:'편안한 인상. 상담사 같은 역할로 모임의 윤활유 존재.',lucky:{color:'베이지, 브라운',direction:'중앙',number:'5, 10',season:'환절기',item:'핸드메이드 소품, 원목 가구'}},
+        6:{title:'경금(庚金) - 강철',personality:'강하고 결단력이 있으며 의리가 있습니다. 불의를 보면 참지 못합니다.',personality_detail:'행동력과 실행력이 강하지만 직설적이어서 상처를 줄 수 있습니다. 배려하는 말투를 연습하세요.',study:'실전에 강하고 응용력이 뛰어남. 공학, 의학(외과), 체육학이 적성.',wealth:'과감한 투자로 큰 수익 가능. 기술력이나 전문성을 무기로 한 수입이 안정적.',career:'군인, 경찰, 법조계, 외과의사, 엔지니어, 스포츠.',health:'폐, 대장, 뼈, 치아 주의. 과도한 운동 부상에 주의.',health_detail:'호흡기 질환에 약하니 가을철 건조한 날씨에 주의. 웨이트 트레이닝이 잘 맞습니다.',love:'직선적인 표현으로 다가갑니다. 보호본능이 강합니다.',love_detail:'표현이 거칠 수 있지만 속은 따뜻합니다. 상대의 자율성을 존중하세요.',relations:'의리와 신의를 중시. 부드러운 표현을 익히면 리더십이 빛납니다.',lucky:{color:'흰색, 금색',direction:'서쪽',number:'4, 9',season:'가을',item:'메탈 소품, 시계, 동전'}},
+        7:{title:'신금(辛金) - 보석',personality:'섬세하고 예민하며 완벽주의적. 미적 감각이 뛰어나고 고귀한 품성.',personality_detail:'외면에 신경을 쓰고 품위를 중시합니다. 완벽 기준이 높아 자신과 타인에게 엄격할 수 있으니 여유를 가지세요.',study:'분석력과 비판적 사고가 뛰어남. 보석 감정, 패션 디자인, 금융공학, 법학이 적성.',wealth:'감각적 투자에 강함. 고가품 투자가 유리하지만 사치에 빠지지 않도록.',career:'보석, 패션, 금융, 예술, IT, 디자이너, 의료.',health:'폐, 호흡기, 피부, 알레르기 주의. 공기 좋은 곳에서 생활하세요.',health_detail:'아로마테라피와 명상이 도움. 깊은 호흡 연습과 산책이 좋습니다.',love:'이상이 높고 까다로우나 한번 빠지면 깊이 사랑합니다.',love_detail:'완벽한 사랑을 꿈꾸지만 불완전함을 수용하는 데서 진정한 사랑이 시작됩니다.',relations:'소수 정예 관계 선호. 가까운 사람에게는 따뜻하지만 무례한 행동에 민감.',lucky:{color:'실버, 화이트',direction:'서쪽',number:'4, 9',season:'가을',item:'액세서리, 크리스탈, 거울'}},
+        8:{title:'임수(壬水) - 바다',personality:'넓고 깊은 사고력. 바다처럼 포용력이 있으며 자유분방하고 진취적입니다.',personality_detail:'호기심이 많고 규범에 얽매이는 것을 싫어합니다. 핵심 목표를 정하고 집중하세요.',study:'다재다능. 철학, 해양학, 무역학, 국제관계가 적성. 유학이 큰 자극이 됩니다.',wealth:'사업 감각이 좋고 무역, 유통, 물류에서 큰 돈을 벌 수 있습니다.',career:'무역, 해운, 교육, 철학, 방송, 물류, 여행업, 외교관.',health:'신장, 방광, 생식기, 허리 주의. 찬 음식을 줄이고 따뜻하게.',health_detail:'겨울철 건강 관리가 중요. 검은콩, 검은깨 등 검은색 음식이 좋습니다. 수영이 최적.',love:'자유로운 연애를 추구하며 매력적입니다.',love_detail:'여행을 함께할 수 있는 모험적인 파트너가 이상적. 개인 시간을 존중해야 행복합니다.',relations:'사교성이 뛰어나고 편견 없이 사람을 대합니다. 핵심 인맥을 관리하세요.',lucky:{color:'검정색, 남색',direction:'북쪽',number:'1, 6',season:'겨울',item:'수족관, 분수, 여행 소품'}},
+        9:{title:'계수(癸水) - 이슬비',personality:'지적이고 직관력이 뛰어나며 침착합니다. 학문과 예술에 재능이 있습니다.',personality_detail:'관찰력이 뛰어나고 깊이 있는 대화를 좋아합니다. 부정적 생각에 빠지지 않도록 긍정적 자기 대화를 연습하세요.',study:'연구 능력과 통찰력이 뛰어난 학자형. 의학, 약학, 문학, 음악이 적성.',wealth:'전문직에서 꾸준한 소득. 물과 관련된 사업이 유리합니다.',career:'학문, 연구, 의료, 종교, 예술, 음악, 작가, 심리치료사, 약사.',health:'신장, 방광, 혈액순환, 냉증 주의. 몸을 따뜻하게 유지하세요.',health_detail:'족욕과 따뜻한 음식이 도움. 명상, 태극권이 잘 맞습니다.',love:'조용하고 깊은 사랑. 감성적이며 공감 능력이 뛰어납니다.',love_detail:'서서히 깊어지는 사랑을 하며 편안하게 해주는 따뜻한 사람이 이상적 파트너입니다.',relations:'깊은 유대 관계. 비밀을 잘 지키며 진심으로 공감합니다.',lucky:{color:'네이비, 차콜',direction:'북쪽',number:'1, 6',season:'겨울',item:'향초, 음악, 일기장'}}
+    };
+
+    const ELEMENT_EXCESS = {'목':'고집이 세고 독선적일 수 있습니다. 간, 담에 부담이 갈 수 있으니 건강관리에 신경 쓰세요.','화':'급하고 충동적일 수 있습니다. 심장, 혈압에 주의하세요.','토':'우유부단하고 고민이 많을 수 있습니다. 위장, 소화기 건강에 신경 쓰세요.','금':'날카롭고 비판적일 수 있습니다. 폐, 호흡기 건강에 주의하세요.','수':'불안하고 변덕스러울 수 있습니다. 신장, 방광 건강에 신경 쓰세요.'};
+    const ELEMENT_LACK = {'목':'추진력이 부족할 수 있습니다. 녹색 계열의 물건을 가까이 두세요.','화':'열정과 표현력이 부족할 수 있습니다. 빨간색 계열이 도움됩니다.','토':'안정감이 부족할 수 있습니다. 노란색, 갈색 계열이 좋습니다.','금':'결단력이 부족할 수 있습니다. 흰색, 금색 계열이 도움됩니다.','수':'지혜와 유연성이 부족할 수 있습니다. 검정색, 파란색 계열이 좋습니다.'};
+
+    // ============================================================
+    // 점수 계산
+    // ============================================================
+    function calculateSajuScore(pillars,elements,yongsin,branchRelations,tenGods) {
+        let s=50; const vals=Object.values(elements); const range=Math.max(...vals)-Math.min(...vals);
+        if(range<=1)s+=20;else if(range<=2)s+=15;else if(range<=3)s+=8;else if(range<=4)s+=2;else s-=5;
+        s-=vals.filter(v=>v===0).length*5;
+        s+=Math.min(branchRelations.filter(r=>r.positive).length*4,12);
+        s-=Math.min(branchRelations.filter(r=>!r.positive).length*3,9);
+        const yc=elements[yongsin.yongsin]||0;if(yc>=2)s+=10;else if(yc===1)s+=5;else s-=3;
+        const ag=new Set();['year','month','hour'].forEach(p=>{if(tenGods[p]){ag.add(tenGods[p].stem);ag.add(tenGods[p].branch);}});
+        if(ag.size>=5)s+=10;else if(ag.size>=4)s+=7;else if(ag.size>=3)s+=4;
+        const pr={'목':'수','화':'목','토':'화','금':'토','수':'금'};const dE=yongsin.dayElement;
+        const ratio=(elements[dE]+elements[pr[dE]])/Object.values(elements).reduce((a,b)=>a+b,0);
+        if(ratio>=0.35&&ratio<=0.65)s+=8;else if(ratio>=0.25&&ratio<=0.75)s+=3;
+        return Math.max(0,Math.min(100,Math.round(s)));
+    }
+
+    function getScoreGrade(s) {
+        if(s>=85)return{grade:'상상(上上)',label:'대길',color:'#c41e3a',desc:'매우 뛰어난 사주입니다. 오행이 잘 균형을 이루고 있어 타고난 복이 많습니다.'};
+        if(s>=75)return{grade:'상(上)',label:'길',color:'#2d8a4e',desc:'좋은 사주입니다. 노력한 만큼 성과를 거둘 수 있으며, 부족한 오행을 보완하면 더 좋습니다.'};
+        if(s>=60)return{grade:'중상(中上)',label:'소길',color:'#457b9d',desc:'무난한 사주입니다. 대운의 흐름을 잘 타면 크게 발전할 수 있습니다.'};
+        if(s>=45)return{grade:'중(中)',label:'보통',color:'#c8a951',desc:'평범한 사주이지만 노력에 따라 크게 달라질 수 있습니다.'};
+        if(s>=30)return{grade:'중하(中下)',label:'소흉',color:'#e6a817',desc:'불균형이 있는 사주입니다. 부족한 오행을 적극적으로 보완하세요.'};
+        return{grade:'하(下)',label:'주의',color:'#e63946',desc:'오행 불균형이 크지만, 본인의 노력이 더 중요합니다. 용신 기운을 적극 활용하세요.'};
+    }
+
+    function calculateCategoryScores(pillars,elements,yongsin,tenGods,branchRelations,gender) {
+        const allGods=[];['year','month','hour'].forEach(p=>{if(tenGods[p]){allGods.push(tenGods[p].stem,tenGods[p].branch);}});
+        let pe=55,st=50,we=50,ca=50,he=60,lo=50,re=55;
+        const biC=allGods.filter(g=>g==='비견'||g==='겁재').length;if(biC===1)pe+=15;else if(biC===0)pe+=5;else pe-=5;
+        pe+=Math.min(branchRelations.filter(r=>r.positive).length*5,15);pe-=branchRelations.filter(r=>!r.positive).length*3;
+        const producing={'목':'수','화':'목','토':'화','금':'토','수':'금'};const controlled={'목':'토','화':'금','토':'수','금':'목','수':'화'};const dE=yongsin.dayElement;
+        st+=allGods.filter(g=>g==='정인'||g==='편인').length*10;if(elements[producing[dE]]>=1)st+=10;if(allGods.includes('식신'))st+=8;
+        we+=allGods.filter(g=>g==='정재'||g==='편재').length*10;if(elements[controlled[dE]]>=1)we+=8;if(yongsin.dayStrength==='strong')we+=5;
+        ca+=allGods.filter(g=>g==='정관'||g==='편관').length*10;if(branchRelations.some(r=>r.type==='삼합'))ca+=10;if(branchRelations.some(r=>r.type==='반합'))ca+=5;
+        he-=Object.values(elements).filter(v=>v===0).length*10;he-=Object.values(elements).filter(v=>v>=4).length*5;he+=Math.min(branchRelations.filter(r=>r.positive).length*3,12);he-=branchRelations.filter(r=>!r.positive).length*4;
+        if(gender==='male'){if(allGods.includes('정재'))lo+=15;if(allGods.includes('편재'))lo+=8;}else{if(allGods.includes('정관'))lo+=15;if(allGods.includes('편관'))lo+=8;}
+        if(branchRelations.some(r=>r.positive))lo+=10;
+        re+=Math.min(allGods.filter(g=>g==='식신'||g==='상관').length*7,14);re+=Math.min(branchRelations.filter(r=>r.positive).length*5,15);re-=branchRelations.filter(r=>!r.positive).length*4;
+        const cl=v=>Math.max(0,Math.min(100,Math.round(v)));
+        return{personality:cl(pe),study:cl(st),wealth:cl(we),career:cl(ca),health:cl(he),love:cl(lo),relations:cl(re)};
+    }
+
+    function interpretDaeun(daeun,dayElement) {
+        const cycle=['목','화','토','금','수']; const diff=((cycle.indexOf(daeun.element)-cycle.indexOf(dayElement))+5)%5;
+        const daeunStr=`${STEMS[daeun.stem]}${BRANCHES[daeun.branch]}`; const ageRange=`${daeun.startAge}~${daeun.endAge}세`;
+        const interps=['비견/겁재 대운. 독립적 활동이나 사업에 기회가 옵니다. 경쟁이 치열해질 수 있으니 협력을 중시하세요.','식신/상관 대운. 창의력과 표현력이 극대화됩니다. 학업, 예술, 기술에서 성과를 거둘 수 있습니다.','편재/정재 대운. 재물운이 좋아집니다. 투자, 사업, 부동산에서 좋은 결과를 얻을 수 있습니다.','편관/정관 대운. 직장, 명예, 지위와 관련된 변화가 있습니다. 승진 기회가 올 수 있습니다.','편인/정인 대운. 학문, 자격증, 부동산에 좋은 시기. 내면의 성장이 이루어집니다.'];
+        return{daeunStr,ageRange,interpretation:interps[diff],element:daeun.element,branchElement:daeun.branchElement};
+    }
+
+    // 궁합
+    function analyzeCompatibility(p1,p2) {
+        const pl1=p1.pillars,pl2=p2.pillars; const r={score:0,maxScore:100,details:[],advice:[]};
+        const ds1=pl1.day.stem,ds2=pl2.day.stem; const de1=STEM_ELEMENTS[ds1],de2=STEM_ELEMENTS[ds2];
+        const ganHap=[[0,5],[1,6],[2,7],[3,8],[4,9]];
+        if(ganHap.some(([a,b])=>(ds1===a&&ds2===b)||(ds1===b&&ds2===a))){r.score+=40;r.details.push({type:'excellent',text:`일간 천간합! ${STEMS[ds1]}${STEMS[ds2]}합 - 천생연분!`});}
+        else{const rel=getElRelSimple(de1,de2);if(rel==='same'){r.score+=25;r.details.push({type:'good',text:'일간 오행이 같아 이해하기 쉽지만 경쟁할 수 있습니다.'});}else if(rel==='produce'){r.score+=35;r.details.push({type:'excellent',text:`${de1}→${de2} 상생 관계. 서로에게 도움이 되는 좋은 궁합.`});}else if(rel==='produced'){r.score+=30;r.details.push({type:'good',text:`${de2}→${de1} 상생 관계. 상대가 나를 도와줍니다.`});}else{r.score+=15;r.details.push({type:'caution',text:'상극 관계. 균형이 필요합니다.'});}}
+        const db1=pl1.day.branch,db2=pl2.day.branch;const br=analyzeBrPairRel(db1,db2);
+        if(br.hap){r.score+=30;r.details.push({type:'excellent',text:`일지 ${br.detail} - 가정적으로 매우 좋은 궁합.`});}else if(br.chung){r.score+=5;r.details.push({type:'warning',text:`일지 ${br.detail} - 노력으로 극복 가능.`});}else{r.score+=20;r.details.push({type:'neutral',text:'일지 관계가 무난합니다.'});}
+        const el1=analyzeElements(pl1),el2=analyzeElements(pl2);const combined={};let comp=0;
+        Object.keys(el1).forEach(e=>{combined[e]=el1[e]+el2[e];if((el1[e]===0&&el2[e]>0)||(el2[e]===0&&el1[e]>0))comp++;});
+        if(comp>=2){r.score+=30;r.details.push({type:'excellent',text:'서로 부족한 오행을 보완해주는 훌륭한 관계.'});}else if(comp===1){r.score+=20;r.details.push({type:'good',text:'일부 오행이 서로를 보완합니다.'});}else{r.score+=15;r.details.push({type:'neutral',text:'오행 보완 관계가 보통입니다.'});}
+        if(r.score>=80)r.advice.push('매우 좋은 궁합! 서로를 존중하세요.');else if(r.score>=60)r.advice.push('좋은 궁합. 소통을 잘 하면 더 좋습니다.');else if(r.score>=40)r.advice.push('노력이 필요한 궁합. 서로의 장점을 인정하세요.');else r.advice.push('어려움이 있을 수 있으나 노력으로 극복 가능합니다.');
+        const lack=Object.entries(combined).filter(([,v])=>v<=2).map(([k])=>k);if(lack.length>0)r.advice.push(`두 분 모두 ${lack.map(e=>`${e}(${ELEMENT_NAMES[e]})`).join(', ')} 기운이 부족합니다.`);
+        return r;
+    }
+
+    function getElRelSimple(e1,e2){const c=['목','화','토','금','수'];const d=((c.indexOf(e2)-c.indexOf(e1))+5)%5;return['same','produce','control','controlled','produced'][d];}
+    function analyzeBrPairRel(b1,b2){const yH=[[0,1],[2,11],[3,10],[4,9],[5,8],[6,7]],yN=['자축합','인해합','묘술합','진유합','사신합','오미합'];const ch=[[0,6],[1,7],[2,8],[3,9],[4,10],[5,11]],cN=['자오충','축미충','인신충','묘유충','진술충','사해충'];for(let i=0;i<yH.length;i++)if((b1===yH[i][0]&&b2===yH[i][1])||(b1===yH[i][1]&&b2===yH[i][0]))return{hap:true,detail:yN[i]};for(let i=0;i<ch.length;i++)if((b1===ch[i][0]&&b2===ch[i][1])||(b1===ch[i][1]&&b2===ch[i][0]))return{chung:true,detail:cN[i]};return{neutral:true,detail:'특별한 관계 없음'};}
+
+    function analyzeFamilyEnergy(members) {
+        const tot={'목':0,'화':0,'토':0,'금':0,'수':0};const ma=[];
+        members.forEach(m=>{const el=analyzeElements(m.pillars);Object.keys(el).forEach(e=>tot[e]+=el[e]);ma.push({name:m.name,elements:el});});
+        const tc=Object.values(tot).reduce((a,b)=>a+b,0);const lack=[],exc=[];
+        Object.entries(tot).forEach(([el,c])=>{const r=c/tc;if(r<0.12)lack.push(el);if(r>0.35)exc.push(el);});
+        const dM={'목':'동쪽','화':'남쪽','토':'중앙','금':'서쪽','수':'북쪽'};const cM={'목':'초록색/청색','화':'빨간색/주황색','토':'노란색/갈색','금':'흰색/금색','수':'검정색/남색'};const iM={'목':'나무 가구, 화분','화':'조명, 캔들','토':'도자기, 흙 화분','금':'금속 소품','수':'수족관, 분수'};const nM={'목':'3, 8','화':'2, 7','토':'5, 10','금':'4, 9','수':'1, 6'};
+        const recs=[];lack.forEach(el=>recs.push({element:el,type:'lacking',direction:dM[el],color:cM[el],items:iM[el],numbers:nM[el],message:`가족 전체적으로 ${el}(${ELEMENT_NAMES[el]}) 기운이 부족합니다.`}));
+        exc.forEach(el=>{const cb={'목':'금','화':'수','토':'목','금':'화','수':'토'};const rm=cb[el];recs.push({element:el,type:'excess',remedy:rm,message:`${el}(${ELEMENT_NAMES[el]}) 기운이 과합니다. ${rm}(${ELEMENT_NAMES[rm]}) 기운으로 조절하세요.`});});
+        return{totalElements:tot,lacking:lack,excess:exc,recommendations:recs,memberAnalyses:ma};
+    }
+
+    // 전체 풀이
+    function generateFullReading(birthData) {
+        const{year,month,day,hour,minute,gender,name,hanjaChars}=birthData;
+        const pillars=calculateFourPillars(year,month,day,hour,minute);
+        const elements=analyzeElements(pillars);
+        const yongsin=determineYongsin(pillars,elements);
+        const tenGods=calculateTenGods(pillars);
+        const daeun=calculateDaeun(pillars,year,month,day,gender);
+        const branchRelations=analyzeBranchRelations([pillars.year.branch,pillars.month.branch,pillars.day.branch,pillars.hour.branch]);
+        const currentYear=new Date().getFullYear();const age=currentYear-year+1;
+        const currentDaeun=daeun.daeunList.find(d=>age>=d.startAge&&age<=d.endAge);
+        const daeunInterps=daeun.daeunList.map(d=>interpretDaeun(d,yongsin.dayElement));
+        const totalScore=calculateSajuScore(pillars,elements,yongsin,branchRelations,tenGods);
+        const scoreGrade=getScoreGrade(totalScore);
+        const categoryScores=calculateCategoryScores(pillars,elements,yongsin,tenGods,branchRelations,gender);
+        const jijanggan=analyzeJijanggan(pillars);
+        const shinsal=calculateShinsal(pillars);
+        const seun=calculateSeun(pillars,yongsin,year);
+        let nameAnalysis=null;
+        if(hanjaChars&&hanjaChars.surname&&hanjaChars.surname.length>0&&hanjaChars.given&&hanjaChars.given.length>0){
+            nameAnalysis=analyzeName(hanjaChars,elements);
+        }
+        return{name,gender,birthData:{year,month,day,hour,minute},pillars,elements,yongsin,tenGods,daeun:{...daeun,interpretations:daeunInterps},branchRelations,dayMasterTraits:DAY_MASTER_TRAITS[pillars.day.stem],elementExcess:ELEMENT_EXCESS,elementLack:ELEMENT_LACK,age,currentDaeun:currentDaeun?interpretDaeun(currentDaeun,yongsin.dayElement):null,totalScore,scoreGrade,categoryScores,jijanggan,shinsal,seun,nameAnalysis};
+    }
+
+    return{STEMS,STEMS_HANJA,BRANCHES,BRANCHES_HANJA,BRANCHES_ANIMAL,STEM_ELEMENTS,BRANCH_ELEMENTS,ELEMENT_COLORS,ELEMENT_NAMES,STEM_YINYANG,BRANCH_YINYANG,HOUR_NAMES,calculateFourPillars,analyzeElements,determineYongsin,calculateTenGods,calculateDaeun,analyzeBranchRelations,generateFullReading,analyzeCompatibility,analyzeFamilyEnergy,DAY_MASTER_TRAITS,ELEMENT_EXCESS,ELEMENT_LACK,calculateSajuScore,getScoreGrade,calculateCategoryScores,analyzeJijanggan,calculateShinsal,calculateSeun,analyzeName,getJijanggan,JIJANGGAN,lookupHanja,HANJA_DICT};
+})();
