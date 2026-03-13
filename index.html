@@ -64,21 +64,33 @@
                         <div class="hanja-input-grid">
                             <div class="hanja-input-item">
                                 <label for="hanjaSurname">성(姓)</label>
-                                <input type="text" id="hanjaSurname" maxlength="2" placeholder="예: 金">
-                                <div class="hanja-info" id="hanjaSurnameInfo"></div>
+                                <div class="hanja-search-wrap">
+                                    <input type="text" id="hanjaSurname" placeholder="한글 입력 예: 김" autocomplete="off">
+                                    <input type="hidden" id="hanjaSurnameVal">
+                                    <div class="hanja-dropdown" id="hanjaSurnameDrop"></div>
+                                </div>
+                                <div class="hanja-selected" id="hanjaSurnameSelected"></div>
                             </div>
                             <div class="hanja-input-item">
                                 <label for="hanjaGiven1">이름 첫째자</label>
-                                <input type="text" id="hanjaGiven1" maxlength="1" placeholder="예: 有">
-                                <div class="hanja-info" id="hanjaGiven1Info"></div>
+                                <div class="hanja-search-wrap">
+                                    <input type="text" id="hanjaGiven1" placeholder="한글 입력 예: 유" autocomplete="off">
+                                    <input type="hidden" id="hanjaGiven1Val">
+                                    <div class="hanja-dropdown" id="hanjaGiven1Drop"></div>
+                                </div>
+                                <div class="hanja-selected" id="hanjaGiven1Selected"></div>
                             </div>
                             <div class="hanja-input-item">
                                 <label for="hanjaGiven2">이름 둘째자</label>
-                                <input type="text" id="hanjaGiven2" maxlength="1" placeholder="예: 煥">
-                                <div class="hanja-info" id="hanjaGiven2Info"></div>
+                                <div class="hanja-search-wrap">
+                                    <input type="text" id="hanjaGiven2" placeholder="한글 입력 예: 환" autocomplete="off">
+                                    <input type="hidden" id="hanjaGiven2Val">
+                                    <div class="hanja-dropdown" id="hanjaGiven2Drop"></div>
+                                </div>
+                                <div class="hanja-selected" id="hanjaGiven2Selected"></div>
                             </div>
                         </div>
-                        <small class="stroke-help">한자를 입력하면 뜻풀이 + 오행 + 획수가 자동 분석됩니다. (예: 金有煥 → 쇠 금, 있을 유, 빛날 환)</small>
+                        <small class="stroke-help">한글 발음을 입력하면 한자 후보가 표시됩니다. 터치하여 선택하세요.</small>
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn btn-primary">사주 보기</button>

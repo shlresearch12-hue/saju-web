@@ -18,21 +18,10 @@ const App = (() => {
             document.getElementById('birthTime').disabled = this.checked;
             if (this.checked) document.getElementById('birthTime').value = '';
         });
-        // 한자 입력 실시간 조회
-        ['hanjaSurname','hanjaGiven1','hanjaGiven2'].forEach(id => {
-            document.getElementById(id).addEventListener('input', function() {
-                const infoEl = document.getElementById(id + 'Info');
-                const chars = this.value.trim();
-                if (!chars) { infoEl.innerHTML = ''; return; }
-                const results = [];
-                for (const ch of chars) {
-                    const info = SajuEngine.lookupHanja(ch);
-                    if (info) results.push(`<span class="hanja-found" style="color:${SajuEngine.ELEMENT_COLORS[info.element]}">${info.char} ${info.hun} ${info.eum} (${info.strokes}획, ${info.element})</span>`);
-                    else results.push(`<span class="hanja-notfound">${ch} - 사전에 없는 한자</span>`);
-                }
-                infoEl.innerHTML = results.join(' ');
-            });
-        });
+        // 한자 검색 UI - 한글 발음으로 검색
+        initHanjaSearch('hanjaSurname');
+        initHanjaSearch('hanjaGiven1');
+        initHanjaSearch('hanjaGiven2');
     }
 
     function showPersonForm() {
@@ -58,9 +47,9 @@ const App = (() => {
         const [year, month, day] = birthDate.split('-').map(Number);
         let hour = 12, minute = 0;
         if (!unknownTime && birthTime) [hour, minute] = birthTime.split(':').map(Number);
-        const hanjaSurname = document.getElementById('hanjaSurname').value.trim();
-        const hanjaGiven1 = document.getElementById('hanjaGiven1').value.trim();
-        const hanjaGiven2 = document.getElementById('hanjaGiven2').value.trim();
+        const hanjaSurname = document.getElementById('hanjaSurnameVal').value.trim();
+        const hanjaGiven1 = document.getElementById('hanjaGiven1Val').value.trim();
+        const hanjaGiven2 = document.getElementById('hanjaGiven2Val').value.trim();
         const hanjaChars = (hanjaSurname && hanjaGiven1) ? {
             surname: [...hanjaSurname],
             given: [hanjaGiven1, hanjaGiven2].filter(v => v)
@@ -553,6 +542,83 @@ const App = (() => {
                 : `<section class="reading-section"><h3>집안 기운 분석</h3><p>가족 전체적으로 오행이 비교적 균형 잡혀 있습니다!</p></section>`}
         </div>`;
         container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // 한자 검색 - 한글 발음(음)으로 한자 후보를 보여주고 터치로 선택
+    function buildEumIndex() {
+        const dict = SajuEngine.HANJA_DICT;
+        const index = {};
+        for (const [char, info] of Object.entries(dict)) {
+            const eum = info[1]; // 음(읽기)
+            if (!index[eum]) index[eum] = [];
+            index[eum].push({ char, hun: info[0], eum: info[1], strokes: info[2], element: info[3], meaning: info[4] });
+        }
+        return index;
+    }
+    const eumIndex = buildEumIndex();
+
+    function initHanjaSearch(inputId) {
+        const input = document.getElementById(inputId);
+        const dropId = inputId + 'Drop';
+        const valId = inputId + 'Val';
+        const selId = inputId + 'Selected';
+        const drop = document.getElementById(dropId);
+        const valInput = document.getElementById(valId);
+        const selDiv = document.getElementById(selId);
+
+        input.addEventListener('input', function () {
+            const q = this.value.trim();
+            if (!q) { drop.classList.remove('open'); drop.innerHTML = ''; return; }
+            // 한글 자모만 있으면 무시 (조합 중)
+            if (/^[ㄱ-ㅎㅏ-ㅣ]+$/.test(q)) return;
+            const results = eumIndex[q] || [];
+            if (results.length === 0) {
+                drop.innerHTML = '<div class="hanja-no-result">일치하는 한자가 없습니다</div>';
+                drop.classList.add('open');
+                return;
+            }
+            drop.innerHTML = results.map(r =>
+                `<div class="hanja-option" data-char="${r.char}" data-hun="${r.hun}" data-eum="${r.eum}" data-el="${r.element}" data-strokes="${r.strokes}">
+                    <span class="hanja-option-char" style="color:${SajuEngine.ELEMENT_COLORS[r.element]}">${r.char}</span>
+                    <span class="hanja-option-info">${r.hun} ${r.eum} <small>(${r.strokes}획, ${r.element})</small></span>
+                </div>`
+            ).join('');
+            drop.classList.add('open');
+        });
+
+        input.addEventListener('focus', function () {
+            if (this.value.trim() && drop.innerHTML) drop.classList.add('open');
+        });
+
+        drop.addEventListener('click', function (e) {
+            const opt = e.target.closest('.hanja-option');
+            if (!opt) return;
+            const char = opt.dataset.char;
+            const hun = opt.dataset.hun;
+            const eum = opt.dataset.eum;
+            const el = opt.dataset.el;
+            const strokes = opt.dataset.strokes;
+            valInput.value = char;
+            input.value = '';
+            drop.classList.remove('open');
+            drop.innerHTML = '';
+            selDiv.innerHTML = `<span class="hanja-selected-tag">
+                <span class="sel-char" style="color:${SajuEngine.ELEMENT_COLORS[el]}">${char}</span>
+                <span class="sel-reading">${hun} ${eum} (${strokes}획)</span>
+                <button type="button" class="sel-remove" title="삭제">&times;</button>
+            </span>`;
+            selDiv.querySelector('.sel-remove').addEventListener('click', function () {
+                valInput.value = '';
+                selDiv.innerHTML = '';
+            });
+        });
+
+        // 바깥 터치하면 드롭다운 닫기
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.hanja-input-item')) {
+                document.querySelectorAll('.hanja-dropdown').forEach(d => d.classList.remove('open'));
+            }
+        });
     }
 
     return { init, renderReading, deleteMember, showCompareModal, hideCompareModal, doCompare, analyzeFamilyClick };
